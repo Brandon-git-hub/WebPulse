@@ -1,0 +1,4 @@
+build/
+*.vcd
+*.csv
+!tests/data/*.vcd

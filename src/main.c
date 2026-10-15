@@ -1,0 +1,416 @@
+/*
+ * webpulse - 8-channel logic analyzer server (WebPulse)
+ *
+ * Server mode (default): HTTP + WebSocket UI on --listen:--port.
+ * One-shot mode (--capture): capture once and write a VCD / CSV file.
+ */
+#include "capture.h"
+#include "device.h"
+#include "export.h"
+#include "platform.h"
+#include "server.h"
+#include "util.h"
+
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
+#ifndef WP_VERSION
+#define WP_VERSION "dev"
+#endif
+
+static volatile sig_atomic_t g_quit;
+
+static void on_signal(int sig)
+{
+    (void)sig;
+    g_quit = 1;
+}
+
+typedef struct {
+    const char *backend;
+    const char *listen;
+    int port;
+    const char *web_root;
+    const char *firmware;
+    double sim_speed;
+    uint64_t max_samples;
+
+    int capture;
+    uint64_t rate;
+    uint64_t samples;
+    const char *trigger;
+    double pre_pct;
+    uint32_t timeout_ms;
+    const char *output;
+    int list_rates;
+} options;
+
+static void usage(FILE *f)
+{
+    fprintf(f,
+        "WebPulse %s - 8-channel logic analyzer server\n"
+        "\n"
+        "Usage: webpulse [options]\n"
+        "\n"
+        "Server:\n"
+        "  -b, --backend sim|fx2    device backend (default: %s)\n"
+        "  -l, --listen ADDR        bind address (default 127.0.0.1, 0.0.0.0 = all)\n"
+        "  -p, --port N             HTTP port (default 8080)\n"
+        "  -w, --web-root DIR       serve the UI from DIR instead of the embedded copy\n"
+        "  -f, --firmware PATH      fx2lafw firmware image\n"
+        "                           (default: firmware/fx2lafw-saleae-logic.fw next to the exe)\n"
+        "      --sim-speed X        simulator speed, 1 = real time, 0 = unlimited (default 1)\n"
+        "      --max-samples N      largest allowed capture (default 256M)\n"
+        "\n"
+        "One-shot capture (no server):\n"
+        "  -c, --capture            capture once, write --output, exit\n"
+        "  -r, --rate R             sample rate, e.g. 24M (default 24M)\n"
+        "  -n, --samples N          samples to capture, e.g. 10M (default 1M)\n"
+        "  -t, --trigger SPEC       8 chars of X/0/1/R/F/E, char i = CH i (default none)\n"
+        "      --pre PCT            pre-trigger percentage 0..100 (default 10)\n"
+        "      --timeout MS         trigger timeout in ms, 0 = forever (default 0)\n"
+        "  -o, --output FILE        output file, .vcd or .csv\n"
+        "\n"
+        "  -L, --list-rates         list supported sample rates\n"
+        "  -V, --version\n"
+        "  -h, --help\n",
+        WP_VERSION,
+#ifdef WP_HAVE_FX2
+        "fx2"
+#else
+        "sim (fx2 not built)"
+#endif
+    );
+}
+
+static int need_arg(int argc, char **argv, int *i, const char **out)
+{
+    if (*i + 1 >= argc) {
+        fprintf(stderr, "webpulse: %s needs an argument\n", argv[*i]);
+        return -1;
+    }
+    *out = argv[++*i];
+    return 0;
+}
+
+static int parse_args(int argc, char **argv, options *o)
+{
+    int i;
+    for (i = 1; i < argc; i++) {
+        const char *a = argv[i], *v;
+#define IS(s, l) (strcmp(a, s) == 0 || strcmp(a, l) == 0)
+        if (IS("-h", "--help")) {
+            usage(stdout);
+            exit(0);
+        } else if (IS("-V", "--version")) {
+            printf("webpulse %s\n", WP_VERSION);
+            exit(0);
+        } else if (IS("-b", "--backend")) {
+            if (need_arg(argc, argv, &i, &o->backend)) return -1;
+        } else if (IS("-l", "--listen")) {
+            if (need_arg(argc, argv, &i, &o->listen)) return -1;
+        } else if (IS("-p", "--port")) {
+            if (need_arg(argc, argv, &i, &v)) return -1;
+            o->port = atoi(v);
+            if (o->port <= 0 || o->port > 65535) {
+                fprintf(stderr, "webpulse: invalid port %s\n", v);
+                return -1;
+            }
+        } else if (IS("-w", "--web-root")) {
+            if (need_arg(argc, argv, &i, &o->web_root)) return -1;
+        } else if (IS("-f", "--firmware")) {
+            if (need_arg(argc, argv, &i, &o->firmware)) return -1;
+        } else if (strcmp(a, "--sim-speed") == 0) {
+            if (need_arg(argc, argv, &i, &v)) return -1;
+            o->sim_speed = atof(v);
+        } else if (strcmp(a, "--max-samples") == 0) {
+            if (need_arg(argc, argv, &i, &v) || wp_parse_si(v, &o->max_samples) < 0) {
+                fprintf(stderr, "webpulse: invalid --max-samples\n");
+                return -1;
+            }
+        } else if (IS("-c", "--capture")) {
+            o->capture = 1;
+        } else if (IS("-r", "--rate")) {
+            if (need_arg(argc, argv, &i, &v) || wp_parse_si(v, &o->rate) < 0) {
+                fprintf(stderr, "webpulse: invalid --rate\n");
+                return -1;
+            }
+        } else if (IS("-n", "--samples")) {
+            if (need_arg(argc, argv, &i, &v) || wp_parse_si(v, &o->samples) < 0) {
+                fprintf(stderr, "webpulse: invalid --samples\n");
+                return -1;
+            }
+        } else if (IS("-t", "--trigger")) {
+            if (need_arg(argc, argv, &i, &o->trigger)) return -1;
+        } else if (strcmp(a, "--pre") == 0) {
+            if (need_arg(argc, argv, &i, &v)) return -1;
+            o->pre_pct = atof(v);
+        } else if (strcmp(a, "--timeout") == 0) {
+            if (need_arg(argc, argv, &i, &v)) return -1;
+            o->timeout_ms = (uint32_t)strtoul(v, NULL, 10);
+        } else if (IS("-o", "--output")) {
+            if (need_arg(argc, argv, &i, &o->output)) return -1;
+        } else if (IS("-L", "--list-rates")) {
+            o->list_rates = 1;
+        } else {
+            fprintf(stderr, "webpulse: unknown option %s (see --help)\n", a);
+            return -1;
+        }
+#undef IS
+    }
+    return 0;
+}
+
+#ifdef WP_HAVE_FX2
+/* Directory containing the executable, with trailing separator. */
+static void exe_dir(char *buf, size_t len)
+{
+    size_t n = 0;
+    buf[0] = '\0';
+#ifdef _WIN32
+    n = GetModuleFileNameA(NULL, buf, (DWORD)len);
+    if (n == 0 || n >= len) {
+        buf[0] = '\0';
+        return;
+    }
+    while (n > 0 && buf[n - 1] != '\\' && buf[n - 1] != '/')
+        n--;
+#else
+    ssize_t r = readlink("/proc/self/exe", buf, len - 1);
+    if (r <= 0) {
+        buf[0] = '\0';
+        return;
+    }
+    n = (size_t)r;
+    while (n > 0 && buf[n - 1] != '/')
+        n--;
+#endif
+    buf[n] = '\0';
+}
+#endif
+
+static wp_device *make_device(const options *o, char *fw_path, size_t fw_len)
+{
+    if (strcmp(o->backend, "sim") == 0)
+        return wp_sim_new(o->sim_speed);
+    if (strcmp(o->backend, "fx2") == 0) {
+#ifdef WP_HAVE_FX2
+        if (o->firmware) {
+            wp_strlcpy(fw_path, o->firmware, fw_len);
+        } else {
+            exe_dir(fw_path, fw_len);
+            strncat(fw_path, "firmware/fx2lafw-saleae-logic.fw",
+                    fw_len - strlen(fw_path) - 1);
+        }
+        return wp_fx2_new(fw_path);
+#else
+        (void)fw_path; (void)fw_len;
+        fprintf(stderr, "webpulse: this build has no fx2 backend (libusb not found at "
+                        "build time); use --backend sim\n");
+        return NULL;
+#endif
+    }
+    fprintf(stderr, "webpulse: unknown backend '%s'\n", o->backend);
+    return NULL;
+}
+
+static const char *ext_of(const char *path)
+{
+    const char *dot = strrchr(path, '.');
+    return dot ? dot + 1 : "";
+}
+
+static int run_capture(wp_engine *e, const options *o)
+{
+    wp_capture_cfg cfg;
+    wp_capture_status st;
+    wp_store *store;
+    char err[200], rate_str[32];
+    FILE *f;
+    int csv, rc;
+    uint64_t last = 0;
+
+    if (!o->output) {
+        fprintf(stderr, "webpulse: --capture needs --output FILE.vcd|.csv\n");
+        return 2;
+    }
+    csv = strcmp(ext_of(o->output), "csv") == 0;
+    if (!csv && strcmp(ext_of(o->output), "vcd") != 0) {
+        fprintf(stderr, "webpulse: output must end in .vcd or .csv\n");
+        return 2;
+    }
+
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.rate = o->rate;
+    cfg.samples = o->samples;
+    cfg.pre_ratio = o->pre_pct / 100.0;
+    cfg.timeout_ms = o->timeout_ms;
+    if (o->trigger)
+        wp_strlcpy(cfg.trigger, o->trigger, sizeof(cfg.trigger));
+
+    if (wp_engine_start(e, &cfg, err, sizeof(err)) < 0) {
+        fprintf(stderr, "webpulse: %s\n", err);
+        return 1;
+    }
+    wp_format_rate(cfg.rate, rate_str, sizeof(rate_str));
+    fprintf(stderr, "capturing %llu samples at %s%s%s\n", (unsigned long long)cfg.samples,
+            rate_str, cfg.trigger[0] ? ", trigger " : "", cfg.trigger);
+
+    while (wp_engine_busy(e)) {
+        if (g_quit) {
+            wp_engine_stop(e);
+            g_quit = 0;
+        }
+        if (wp_now_ms() - last >= 250) {
+            last = wp_now_ms();
+            wp_engine_status(e, &st);
+            fprintf(stderr, "\r  %-10s %5.1f %%", wp_state_name(st.state),
+                    st.samples ? 100.0 * (double)st.filled / (double)st.samples : 0.0);
+            fflush(stderr);
+        }
+        wp_sleep_ms(10);
+    }
+    wp_engine_status(e, &st);
+    fprintf(stderr, "\r  %-10s\n", wp_state_name(st.state));
+    if (st.state != WP_ST_DONE) {
+        fprintf(stderr, "webpulse: capture failed: %s\n",
+                st.error[0] ? st.error : "stopped before trigger");
+        return 1;
+    }
+    if (st.error[0])
+        fprintf(stderr, "webpulse: warning: %s\n", st.error);
+
+    store = wp_engine_store(e);
+    f = fopen(o->output, "wb");
+    if (!f) {
+        perror(o->output);
+        wp_store_unref(store);
+        return 1;
+    }
+    rc = csv ? wp_export_csv(store, NULL, 1, wp_write_file, f)
+             : wp_export_vcd(store, NULL, wp_write_file, f);
+    if (fclose(f) != 0)
+        rc = -1;
+    if (rc == 0) {
+        fprintf(stderr, "wrote %s (%llu samples", o->output, (unsigned long long)store->n);
+        if (store->trigger_pos >= 0)
+            fprintf(stderr, ", trigger at sample %lld", (long long)store->trigger_pos);
+        fprintf(stderr, ")\n");
+    } else {
+        fprintf(stderr, "webpulse: error writing %s\n", o->output);
+    }
+    wp_store_unref(store);
+    return rc == 0 ? 0 : 1;
+}
+
+static int run_server(wp_engine *e, const options *o)
+{
+    wp_server_opts so;
+    wp_server *srv;
+    char err[300];
+
+    memset(&so, 0, sizeof(so));
+    so.listen = o->listen;
+    so.port = o->port;
+    so.web_root = o->web_root;
+    so.version = WP_VERSION;
+    srv = wp_server_start(e, &so, err, sizeof(err));
+    if (!srv) {
+        fprintf(stderr, "webpulse: %s\n", err);
+        return 1;
+    }
+    fprintf(stderr, "WebPulse %s listening on http://%s:%d/  (Ctrl+C to quit)\n",
+            WP_VERSION, strcmp(o->listen, "0.0.0.0") == 0 ? "localhost" : o->listen, o->port);
+    while (!g_quit)
+        wp_sleep_ms(100);
+    fprintf(stderr, "shutting down\n");
+    wp_engine_stop(e);
+    wp_engine_wait(e, 5000);
+    wp_server_stop(srv);
+    return 0;
+}
+
+int main(int argc, char **argv)
+{
+    options o;
+    wp_device *dev;
+    wp_engine *e;
+    char err[256], fw_path[1024];
+    int rc;
+
+    memset(&o, 0, sizeof(o));
+#ifdef WP_HAVE_FX2
+    o.backend = "fx2";
+#else
+    o.backend = "sim";
+#endif
+    o.listen = "127.0.0.1";
+    o.port = 8080;
+    o.sim_speed = 1.0;
+    o.max_samples = 256000000ull;
+    o.rate = 24000000;
+    o.samples = 1000000;
+    o.pre_pct = 10;
+
+    if (parse_args(argc, argv, &o) < 0)
+        return 2;
+    if (o.pre_pct < 0 || o.pre_pct > 100) {
+        fprintf(stderr, "webpulse: --pre must be within 0..100\n");
+        return 2;
+    }
+
+    if (o.list_rates) {
+        size_t i;
+        for (i = 0; i < wp_fx2_nrates; i++) {
+            char r[32];
+            wp_format_rate(wp_fx2_rates[i], r, sizeof(r));
+            printf("%s\n", r);
+        }
+        return 0;
+    }
+
+    signal(SIGINT, on_signal);
+    signal(SIGTERM, on_signal);
+
+    dev = make_device(&o, fw_path, sizeof(fw_path));
+    if (!dev)
+        return 1;
+    if (dev->ops->open(dev, err, sizeof(err)) < 0) {
+        fprintf(stderr, "webpulse: %s\n", err);
+        wp_device_destroy(dev);
+        return 1;
+    }
+    {
+        wp_device_info info;
+        dev->ops->info(dev, &info);
+        fprintf(stderr, "device: %s (%s)%s%s\n", info.model, info.backend,
+                info.firmware[0] ? ", firmware " : "", info.firmware);
+    }
+
+    e = wp_engine_new(dev, o.max_samples);
+    if (!e) {
+        fprintf(stderr, "webpulse: out of memory\n");
+        wp_device_destroy(dev);
+        return 1;
+    }
+
+    if (o.capture) {
+        /* One-shot runs the simulator flat out unless asked otherwise. */
+        rc = run_capture(e, &o);
+    } else {
+        rc = run_server(e, &o);
+    }
+
+    wp_engine_free(e);
+    dev->ops->close(dev);
+    wp_device_destroy(dev);
+    return rc;
+}
