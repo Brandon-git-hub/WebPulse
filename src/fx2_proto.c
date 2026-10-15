@@ -10,14 +10,15 @@ int wp_fx2_start_payload(uint64_t rate, uint8_t out[3])
     if (48000000ull % rate == 0) {
         flags = FX2_START_FLAGS_CLK_48MHZ;
         delay = 48000000ull / rate - 1;
-        if (delay > FX2_MAX_SAMPLE_DELAY)
+        if (delay >= FX2_MAX_SAMPLE_DELAY)
             delay = 0;
     }
     if (delay == 0 && 30000000ull % rate == 0) {
         flags = FX2_START_FLAGS_CLK_30MHZ;
         delay = 30000000ull / rate - 1;
     }
-    if (delay == 0 || delay > FX2_MAX_SAMPLE_DELAY)
+    /* The firmware rejects sample_delay_h >= 6 (gpif-acquisition.c). */
+    if (delay == 0 || delay >= FX2_MAX_SAMPLE_DELAY)
         return -1;
 
     out[0] = flags | FX2_START_FLAGS_SAMPLE_8BIT;
