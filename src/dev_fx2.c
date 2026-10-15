@@ -235,8 +235,14 @@ static int fx2_open(wp_device *d, char *err, size_t errlen)
         if (desc.iProduct)
             libusb_get_string_descriptor_ascii(h, desc.iProduct, (unsigned char *)prod,
                                                sizeof(prod));
-        snprintf(p->model, sizeof(p->model), "%s (%04x:%04x)", prod[0] ? prod : "FX2",
-                 desc.idVendor, desc.idProduct);
+        /* Full speed (e.g. behind a USB 1.1 hub) cannot sustain more than
+         * about 1 MB/s; flag it so overflows at high rates make sense. */
+        int full = libusb_get_device_speed(libusb_get_device(h)) == LIBUSB_SPEED_FULL;
+        snprintf(p->model, sizeof(p->model), "%s (%04x:%04x)%s", prod[0] ? prod : "FX2",
+                 desc.idVendor, desc.idProduct, full ? " FULL-SPEED USB" : "");
+        if (full)
+            fprintf(stderr, "fx2: warning: device is connected at USB full speed; "
+                            "rates above ~1 MHz will overflow\n");
     }
     d->is_open = 1;
     return 0;
@@ -314,9 +320,17 @@ static void LIBUSB_CALL xfer_cb(struct libusb_transfer *x)
         break;
     case LIBUSB_TRANSFER_CANCELLED:
         break;
-    default:
-        end_once(p, WP_DEV_ERR_IO, libusb_error_name(LIBUSB_ERROR_IO));
+    default: {
+        static const char *const names[] = {
+            "completed", "error", "timed out", "cancelled", "stall", "no device", "overflow",
+        };
+        char msg[64];
+        snprintf(msg, sizeof(msg), "USB transfer failed: %s",
+                 (unsigned)x->status < sizeof(names) / sizeof(names[0]) ? names[x->status]
+                                                                        : "unknown status");
+        end_once(p, WP_DEV_ERR_IO, msg);
         break;
+    }
     }
     free_xfer(p, x);
 }
