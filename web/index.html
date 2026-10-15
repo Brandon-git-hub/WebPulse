@@ -1,1 +1,98 @@
-<!doctype html><title>WebPulse</title><p>placeholder</p>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>WebPulse</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M1 12h3V4h4v8h3V4h4' fill='none' stroke='%2337d0b5' stroke-width='2'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="toolbar">
+    <div class="brand">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 12h3V4h4v8h3V4h4"/></svg>
+      <span>WebPulse</span>
+    </div>
+
+    <div class="group">
+      <label class="field">
+        <span>Rate</span>
+        <select id="rate"></select>
+      </label>
+      <label class="field">
+        <span>Samples</span>
+        <input id="samples" list="sample-presets" value="10M" spellcheck="false" autocomplete="off">
+        <datalist id="sample-presets">
+          <option value="1M"></option><option value="10M"></option>
+          <option value="50M"></option><option value="100M"></option>
+          <option value="256M"></option>
+        </datalist>
+      </label>
+      <span class="hint" id="duration"></span>
+      <label class="field">
+        <span>Pre-trigger</span>
+        <input id="pre" type="number" min="0" max="100" step="5" value="10">
+        <span class="unit">%</span>
+      </label>
+      <label class="field">
+        <span>Timeout</span>
+        <input id="timeout" type="number" min="0" step="1" value="0" title="Trigger wait timeout in seconds, 0 = wait forever">
+        <span class="unit">s</span>
+      </label>
+    </div>
+
+    <div class="group">
+      <button id="run" class="primary" title="Start capture (R)">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>Run
+      </button>
+      <button id="stop" title="Stop capture (S)" disabled>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1"/></svg>Stop
+      </button>
+    </div>
+
+    <div class="status">
+      <span id="state" class="pill" data-state="offline">offline</span>
+      <div class="progress" id="progress-wrap" hidden><div id="progress"></div></div>
+      <span id="state-detail" class="hint"></span>
+    </div>
+
+    <div class="group right">
+      <a id="export-vcd" class="button disabled" download>VCD</a>
+      <a id="export-csv" class="button disabled" download>CSV</a>
+      <span id="device" class="hint device"></span>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="channels" id="channels">
+      <div class="channels-head">
+        <span>Channel</span>
+        <span title="Trigger condition">Trig</span>
+      </div>
+    </aside>
+    <section class="wave" id="wave-wrap">
+      <canvas id="wave"></canvas>
+      <div id="empty" class="empty">
+        <p class="big">No capture yet</p>
+        <p>Set the trigger per channel, then press <kbd>Run</kbd>.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="statusbar">
+    <span><i class="sw a"></i>A <b id="cur-a">–</b></span>
+    <span><i class="sw b"></i>B <b id="cur-b">–</b></span>
+    <span>Δt <b id="cur-dt">–</b></span>
+    <span>1/Δt <b id="cur-f">–</b></span>
+    <span>Mouse <b id="cur-m">–</b></span>
+    <span class="spacer"></span>
+    <span id="view-info" class="hint"></span>
+    <span class="hint keys">wheel zoom · drag pan · click ruler A · shift+click B · F fit · T trigger · Esc clear</span>
+  </footer>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

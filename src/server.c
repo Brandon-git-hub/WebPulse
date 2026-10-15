@@ -38,7 +38,7 @@ typedef struct {
 
 extern const wp_asset wp_assets[];
 
-#define MAX_WS_CLIENTS 32
+#define MAX_WS_CLIENTS 16   /* each WebSocket holds one CivetWeb worker thread */
 #define MAX_QUERY_WIDTH 8192
 #define WS_HEADER_LEN 24
 
@@ -495,11 +495,15 @@ wp_server *wp_server_start(wp_engine *e, const wp_server_opts *o, char *err, siz
     opts[n++] = "listening_ports";
     opts[n++] = ports;
     opts[n++] = "num_threads";
-    opts[n++] = "16";
+    opts[n++] = "32";
     opts[n++] = "enable_directory_listing";
     opts[n++] = "no";
     opts[n++] = "websocket_timeout_ms";
     opts[n++] = "3600000";
+    /* Viewport replies are small; without this, Nagle + delayed ACK adds
+     * ~40 ms to every query. */
+    opts[n++] = "tcp_nodelay";
+    opts[n++] = "1";
     if (o->web_root) {
         opts[n++] = "document_root";
         opts[n++] = o->web_root;
