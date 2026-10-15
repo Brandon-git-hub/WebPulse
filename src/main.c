@@ -384,11 +384,15 @@ int main(int argc, char **argv)
     if (!dev)
         return 1;
     if (dev->ops->open(dev, err, sizeof(err)) < 0) {
-        fprintf(stderr, "webpulse: %s\n", err);
-        wp_device_destroy(dev);
-        return 1;
+        if (o.capture) {
+            fprintf(stderr, "webpulse: %s\n", err);
+            wp_device_destroy(dev);
+            return 1;
+        }
+        /* Server mode: keep running, the device is opened on the next Run. */
+        fprintf(stderr, "webpulse: warning: %s (will retry when a capture starts)\n", err);
     }
-    {
+    if (dev->is_open) {
         wp_device_info info;
         dev->ops->info(dev, &info);
         fprintf(stderr, "device: %s (%s)%s%s\n", info.model, info.backend,

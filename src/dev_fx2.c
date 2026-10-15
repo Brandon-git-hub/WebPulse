@@ -43,6 +43,7 @@ typedef struct {
     atomic_int active;
     atomic_int stop;
     atomic_int ended;
+    atomic_int gone;            /* device disconnected during acquisition */
     unsigned nxfer;
     unsigned empty;
 } fx2_priv;
@@ -227,6 +228,7 @@ static int fx2_open(wp_device *d, char *err, size_t errlen)
     }
 
     p->h = h;
+    atomic_store(&p->gone, 0);
     snprintf(p->fw_version, sizeof(p->fw_version), "fx2lafw %u.%u", ver[0], ver[1]);
     {
         char prod[48] = "";
@@ -248,6 +250,8 @@ static void fx2_close(wp_device *d)
         libusb_close(p->h);
         p->h = NULL;
     }
+    p->model[0] = '\0';
+    p->fw_version[0] = '\0';
     d->is_open = 0;
 }
 
@@ -305,6 +309,7 @@ static void LIBUSB_CALL xfer_cb(struct libusb_transfer *x)
         }
         return;
     case LIBUSB_TRANSFER_NO_DEVICE:
+        atomic_store(&p->gone, 1);
         end_once(p, WP_DEV_ERR_IO, "device disconnected");
         break;
     case LIBUSB_TRANSFER_CANCELLED:
@@ -383,6 +388,8 @@ static int fx2_start(wp_device *d, uint64_t rate, wp_sink *sink, char *err, size
             free(buf);
             libusb_free_transfer(x);
             snprintf(err, errlen, "fx2: cannot submit transfer: %s", libusb_error_name(r));
+            if (r == LIBUSB_ERROR_NO_DEVICE)
+                atomic_store(&p->gone, 1);
             goto fail;
         }
         pthread_mutex_lock(&p->xlock);
@@ -406,6 +413,8 @@ static int fx2_start(wp_device *d, uint64_t rate, wp_sink *sink, char *err, size
         atomic_store(&p->stop, 1);
         pthread_join(p->thread, NULL);
         p->running = 0;
+        if (r == LIBUSB_ERROR_NO_DEVICE)
+            fx2_close(d);
         return -1;
     }
     return 0;
@@ -419,6 +428,8 @@ fail:
         struct timeval tv = { 0, 100000 };
         libusb_handle_events_timeout_completed(p->ctx, &tv, NULL);
     }
+    if (atomic_load(&p->gone))
+        fx2_close(d);
     return -1;
 }
 
@@ -430,6 +441,9 @@ static void fx2_stop(wp_device *d)
     atomic_store(&p->stop, 1);
     pthread_join(p->thread, NULL);
     p->running = 0;
+    /* Drop the stale handle; the next capture re-opens the device. */
+    if (atomic_load(&p->gone))
+        fx2_close(d);
 }
 
 static void fx2_info(wp_device *d, wp_device_info *info)
@@ -473,6 +487,7 @@ wp_device *wp_fx2_new(const char *firmware_path)
     atomic_init(&p->active, 0);
     atomic_init(&p->stop, 0);
     atomic_init(&p->ended, 0);
+    atomic_init(&p->gone, 0);
     d->ops = &fx2_ops;
     d->priv = p;
     return d;

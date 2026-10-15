@@ -352,10 +352,10 @@ void wp_engine_free(wp_engine *e)
 static int validate(wp_engine *e, const wp_capture_cfg *cfg, wp_trigger *trig,
                     char *err, size_t errlen)
 {
-    if (!e->dev->is_open) {
-        snprintf(err, errlen, "device is not open");
+    /* (Re)open lazily so the device can be plugged in after start-up or
+     * after it was disconnected. */
+    if (!e->dev->is_open && e->dev->ops->open(e->dev, err, errlen) < 0)
         return -1;
-    }
     if (!wp_device_rate_supported(e->dev, cfg->rate)) {
         snprintf(err, errlen, "unsupported sample rate %llu Hz",
                  (unsigned long long)cfg->rate);

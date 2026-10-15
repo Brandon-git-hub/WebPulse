@@ -324,7 +324,14 @@ function onStatus(st) {
   }
 }
 
+function showDevice(d) {
+  $('device').textContent = `${d.model}${d.firmware ? ' · ' + d.firmware : ''} · v${d.version}`;
+  $('device').title = $('device').textContent;
+}
+
 function showCapture(cap) {
+  // The device may have been (re)connected for this capture; refresh its label.
+  api('api/device').then((d) => { app.device = d; showDevice(d); }).catch(() => {});
   query.reset();
   renderer.clearData();
   renderer.cursors = { a: null, b: null };
@@ -566,9 +573,7 @@ async function init() {
     const want = settings.rate && app.device.rates.includes(Number(settings.rate))
       ? settings.rate : String(Math.max(...app.device.rates));
     sel.value = want;
-    const d = app.device;
-    $('device').textContent = `${d.model}${d.firmware ? ' · ' + d.firmware : ''} · v${d.version}`;
-    $('device').title = $('device').textContent;
+    showDevice(app.device);
   } catch (e) {
     toast('Cannot reach the WebPulse server: ' + e.message);
   }
