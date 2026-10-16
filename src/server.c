@@ -54,6 +54,7 @@ struct wp_server {
     pthread_mutex_t ws_lock;
     struct mg_connection *ws[MAX_WS_CLIENTS];
     int nws;
+    int port;
 
     pthread_t status_thread;
     atomic_int quit;
@@ -573,6 +574,7 @@ wp_server *wp_server_start(wp_engine *e, const wp_server_opts *o, char *err, siz
     struct mg_init_data init;
     struct mg_error_data errd;
     char errbuf[256] = "";
+    int tries = o->port_tries > 1 ? o->port_tries : 1, t;
 
     if (!s) {
         snprintf(err, errlen, "out of memory");
@@ -583,7 +585,6 @@ wp_server *wp_server_start(wp_engine *e, const wp_server_opts *o, char *err, siz
     pthread_mutex_init(&s->ws_lock, NULL);
     atomic_init(&s->quit, 0);
 
-    snprintf(ports, sizeof(ports), "%s:%d", o->listen ? o->listen : "127.0.0.1", o->port);
     opts[n++] = "listening_ports";
     opts[n++] = ports;
     opts[n++] = "num_threads";
@@ -613,7 +614,19 @@ wp_server *wp_server_start(wp_engine *e, const wp_server_opts *o, char *err, siz
     errd.text_buffer_size = sizeof(errbuf);
 
     mg_init_library(0);
-    s->ctx = mg_start2(&init, &errd);
+    for (t = 0; t < tries && o->port + t <= 65535; t++) {
+        snprintf(ports, sizeof(ports), "%s:%d", o->listen ? o->listen : "127.0.0.1",
+                 o->port + t);
+        bind_log[0] = '\0';
+        errbuf[0] = '\0';
+        s->ctx = mg_start2(&init, &errd);
+        if (s->ctx || !bind_log[0])
+            break;                      /* started, or failed for another reason */
+        if (t + 1 < tries)
+            fprintf(stderr, "webpulse: port %d unavailable (%s), trying %d\n", o->port + t,
+                    bind_log, o->port + t + 1);
+    }
+    s->port = o->port + t;
     if (!s->ctx) {
         if (bind_log[0])
             snprintf(err, errlen, "cannot start HTTP server: %s%s", bind_log,
@@ -641,6 +654,11 @@ wp_server *wp_server_start(wp_engine *e, const wp_server_opts *o, char *err, siz
         return NULL;
     }
     return s;
+}
+
+int wp_server_port(const wp_server *s)
+{
+    return s->port;
 }
 
 void wp_server_stop(wp_server *s)

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- If the default port 9002 is taken, use the next free one up to 9011 (not
+  when `-p` is given) and print the address actually used.
+- When the HTTP server cannot listen, say why (port in use, reserved by
+  Windows, …) instead of "Failed to setup server ports".
+- README: how to get past the SmartScreen warning for the unsigned exe.
+
 ## 0.1.0
 
 First release.

@@ -71,6 +71,10 @@ webpulse -b sim                  # simulator, no hardware needed
 webpulse -b sim -w web           # serve web/ from disk while editing the UI
 ```
 
+If port 9002 is taken (some editors and tools listen on it) WebPulse uses the
+next free one up to 9011 and prints the address. With `-p PORT` it uses exactly
+that port and stops with the reason if it cannot.
+
 One-shot capture without the UI:
 
 ```bash
@@ -112,12 +116,17 @@ works under that path prefix.
 
 ## Windows setup (first time)
 
+0. Windows SmartScreen may warn that the app is unrecognised, because
+   `webpulse.exe` is not code-signed. Either click **More info → Run anyway**,
+   or, before unpacking, right-click the zip → **Properties** → tick
+   **Unblock**, so none of the unpacked files are flagged.
 1. Plug in the board and open Device Manager. It shows up as `VID_0925&PID_3881`
    if its EEPROM is programmed, or `VID_04B4&PID_8613` if the EEPROM is blank.
 2. With [Zadig](https://zadig.akeo.ie/), install **WinUSB** for that device. When
    WebPulse uploads the firmware, the board reconnects as `0925:3881`. If Zadig
    then shows that ID without WinUSB, install WinUSB for it as well.
-3. Run `webpulse.exe`, then open http://127.0.0.1:9002/.
+3. Run `webpulse.exe`, then open the address it prints, normally
+   http://127.0.0.1:9002/.
 
 When WebPulse opens the board (at start-up, or on the next Run if the board was
 plugged in later), it uploads `firmware/fx2lafw-saleae-logic.fw` to the board's

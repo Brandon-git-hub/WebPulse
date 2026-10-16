@@ -38,6 +38,7 @@ typedef struct {
     const char *backend;
     const char *listen;
     int port;
+    int port_set;               /* given with -p: do not fall back to another port */
     const char *web_root;
     const char *firmware;
     double sim_speed;
@@ -64,7 +65,8 @@ static void usage(FILE *f)
         "Server:\n"
         "  -b, --backend sim|fx2    device backend (default: %s)\n"
         "  -l, --listen ADDR        bind address (default 127.0.0.1, 0.0.0.0 = all)\n"
-        "  -p, --port N             HTTP port (default 9002)\n"
+        "  -p, --port N             HTTP port (default 9002; if it is taken and -p is\n"
+        "                           not given, the next free one up to 9011)\n"
         "  -w, --web-root DIR       serve the UI from DIR instead of the embedded copy\n"
         "  -f, --firmware PATH      fx2lafw firmware image\n"
         "                           (default: firmware/fx2lafw-saleae-logic.fw next to the exe)\n"
@@ -122,6 +124,7 @@ static int parse_args(int argc, char **argv, options *o)
         } else if (IS("-p", "--port")) {
             if (need_arg(argc, argv, &i, &v)) return -1;
             o->port = atoi(v);
+            o->port_set = 1;
             if (o->port <= 0 || o->port > 65535) {
                 fprintf(stderr, "webpulse: invalid port %s\n", v);
                 return -1;
@@ -328,6 +331,7 @@ static int run_server(wp_engine *e, const options *o)
     memset(&so, 0, sizeof(so));
     so.listen = o->listen;
     so.port = o->port;
+    so.port_tries = o->port_set ? 1 : 10;   /* default port taken: try 9003..9011 */
     so.web_root = o->web_root;
     so.version = WP_VERSION;
     srv = wp_server_start(e, &so, err, sizeof(err));
@@ -336,7 +340,8 @@ static int run_server(wp_engine *e, const options *o)
         return 1;
     }
     fprintf(stderr, "WebPulse %s listening on http://%s:%d/  (Ctrl+C to quit)\n",
-            WP_VERSION, strcmp(o->listen, "0.0.0.0") == 0 ? "localhost" : o->listen, o->port);
+            WP_VERSION, strcmp(o->listen, "0.0.0.0") == 0 ? "localhost" : o->listen,
+            wp_server_port(srv));
     while (!g_quit)
         wp_sleep_ms(100);
     fprintf(stderr, "shutting down\n");
