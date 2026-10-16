@@ -1,0 +1,172 @@
+# Build and test on every push; on a v* tag also publish a GitHub release
+# with the Windows and Linux packages.
+#
+# The Windows job recreates the layout of the development machine's
+# /mnt/ssd/tools under $RUNNER_TEMP/tools, so cmake/mingw-w64-x86_64.cmake is
+# used unchanged (TOOLS_ROOT points at it). Downloads are pinned by SHA-256.
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  LLVM_MINGW: llvm-mingw-20261006-ucrt-ubuntu-22.04-x86_64
+  LLVM_MINGW_URL: https://github.com/mstorsjo/llvm-mingw/releases/download/20261006/llvm-mingw-20261006-ucrt-ubuntu-22.04-x86_64.tar.xz
+  LLVM_MINGW_SHA256: 5f9c6ed95b2d4bdb2869a488c5fd5857fbdabcf288a0aa3eb1da43f6a08d8ab4
+  LIBUSB_VERSION: 1.0.30
+  LIBUSB_WIN_SHA256: 7fb1dfec805b97983763d7d0ae244320da12add1003d4249c96cc4d586398c79
+  LIBUSB_SRC_SHA256: fea36f34f9156400209595e300840767ab1a385ede1dc7ee893015aea9c6dbaf
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04     # older glibc, so the binary runs on more distributions
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22    # web_smoke.mjs needs the built-in WebSocket
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Build libusb (static, without udev)
+        run: |
+          curl -fsSL -o libusb.tar.bz2 \
+            https://github.com/libusb/libusb/releases/download/v$LIBUSB_VERSION/libusb-$LIBUSB_VERSION.tar.bz2
+          echo "$LIBUSB_SRC_SHA256  libusb.tar.bz2" | sha256sum -c
+          tar xjf libusb.tar.bz2
+          cd libusb-$LIBUSB_VERSION
+          ./configure --prefix="$RUNNER_TEMP/libusb" --disable-udev --enable-static \
+            --disable-shared --disable-examples-build --disable-tests-build CFLAGS="-O2 -fPIC"
+          make -j"$(nproc)" install
+
+      - name: Build
+        run: |
+          export PKG_CONFIG_PATH="$RUNNER_TEMP/libusb/lib/pkgconfig"
+          cmake -S . -B build/linux -G Ninja
+          cmake --build build/linux
+
+      - name: Unit tests
+        run: ctest --test-dir build/linux --output-on-failure
+
+      - name: Web smoke test
+        run: |
+          ./build/linux/webpulse -b sim -p 18080 &
+          pid=$!
+          sleep 1
+          node tests/web_smoke.mjs http://127.0.0.1:18080/
+          kill "$pid"
+
+      - name: Package
+        run: python3 tools/package.py build/linux linux-x86_64 dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webpulse-linux-x86_64
+          path: dist/*
+
+  windows:
+    runs-on: ubuntu-22.04     # cross-compiled with llvm-mingw
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build p7zip-full pkg-config
+
+      - name: Set up toolchain (same layout as /mnt/ssd/tools)
+        run: |
+          T="$RUNNER_TEMP/tools"
+          mkdir -p "$T/mingw-w64" "$T/pkgconf/bin" "$T/pkgconf/lib"
+
+          curl -fsSL -o llvm-mingw.tar.xz "$LLVM_MINGW_URL"
+          echo "$LLVM_MINGW_SHA256  llvm-mingw.tar.xz" | sha256sum -c
+          tar xJf llvm-mingw.tar.xz -C "$T/mingw-w64"
+          ln -s "$LLVM_MINGW" "$T/mingw-w64/current"
+
+          curl -fsSL -o libusb.7z \
+            https://github.com/libusb/libusb/releases/download/v$LIBUSB_VERSION/libusb-$LIBUSB_VERSION.7z
+          echo "$LIBUSB_WIN_SHA256  libusb.7z" | sha256sum -c
+          7z x -olibusb-win libusb.7z > /dev/null
+          S="$T/mingw-w64/current/x86_64-w64-mingw32"
+          mkdir -p "$S/include/libusb-1.0" "$S/lib/pkgconfig"
+          cp "$(find libusb-win -path '*/include/libusb.h' | head -1)" "$S/include/libusb-1.0/"
+          cp "$(find libusb-win -path '*/MinGW64/static/libusb-1.0.a' | head -1)" "$S/lib/"
+          printf '%s\n' \
+            "prefix=$S" 'libdir=${prefix}/lib' 'includedir=${prefix}/include' '' \
+            'Name: libusb-1.0' 'Description: libusb' "Version: $LIBUSB_VERSION" \
+            'Libs: -L${libdir} -lusb-1.0' 'Cflags: -I${includedir}/libusb-1.0' \
+            > "$S/lib/pkgconfig/libusb-1.0.pc"
+
+          # The toolchain file calls <triple>-pkg-config from pkgconf/bin.
+          printf '#!/bin/sh\nexec pkg-config "$@"\n' > "$T/pkgconf/bin/x86_64-w64-mingw32-pkg-config"
+          chmod +x "$T/pkgconf/bin/x86_64-w64-mingw32-pkg-config"
+          echo "TOOLS_ROOT=$T" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: |
+          cmake -S . -B build/win -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64-x86_64.cmake
+          cmake --build build/win
+          # Without libusb the FX2 backend is silently left out; that must not ship.
+          grep -q -- "-DWP_HAVE_FX2=1" build/win/build.ninja
+
+      - name: Check the executable is self-contained
+        run: |
+          deps=$("$TOOLS_ROOT/mingw-w64/current/bin/llvm-objdump" -p build/win/webpulse.exe \
+                 | awk '/DLL Name/ {print $3}' | sort)
+          echo "$deps"
+          if echo "$deps" | grep -viE '^(KERNEL32|WS2_32|api-ms-win-crt-.*)\.dll$'; then
+            echo "unexpected DLL dependency" >&2
+            exit 1
+          fi
+
+      - name: Package
+        run: python3 tools/package.py build/win win64 dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webpulse-win64
+          path: dist/*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, windows]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the project version
+        run: |
+          v=$(sed -n 's/^project(webpulse VERSION \([^ ]*\).*/\1/p' CMakeLists.txt)
+          test "v$v" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != CMakeLists.txt $v" >&2; exit 1; }
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          awk -v v="$VERSION" '
+            /^## / { on = ($2 == v) ; next }
+            on' CHANGELOG.md > notes.md
+          test -s notes.md || { echo "no CHANGELOG.md section for $VERSION" >&2; exit 1; }
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: WebPulse ${{ env.VERSION }}
+          body_path: notes.md
+          files: dist/*
