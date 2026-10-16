@@ -89,8 +89,24 @@ select, input {
 }
 select:focus, input:focus { border-color: var(--accent); }
 #samples { width: 80px; }
-/* Preset picker next to the samples box: shows only its arrow. */
-select.preset { width: 30px; padding: 5px 4px; margin-left: -4px; color: var(--muted); }
+/* Text box and preset picker drawn as one field; the picker shows only its arrow. */
+.combo {
+  display: inline-flex;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.combo:focus-within { border-color: var(--accent); }
+.combo input, .combo select { border: none; background: transparent; }
+.combo select {
+  width: 26px;
+  padding: 5px 4px;
+  color: var(--muted);
+  border-left: 1px solid var(--border);
+  border-radius: 0 6px 6px 0;
+  cursor: pointer;
+}
+.combo select option { background: var(--panel-2); color: var(--text); }
 #pre, #timeout { width: 64px; }
 
 button, .button {

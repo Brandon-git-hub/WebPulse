@@ -231,11 +231,11 @@ function updateDuration() {
   const el = $('duration');
   if (!n || !rate) {
     el.textContent = n === null ? 'invalid' : '';
-    $('samples').style.borderColor = n === null ? 'var(--danger)' : '';
+    $('samples-box').style.borderColor = n === null ? 'var(--danger)' : '';
     return;
   }
   const max = app.device ? app.device.max_samples : Infinity;
-  $('samples').style.borderColor = n > max || n < 16 ? 'var(--danger)' : '';
+  $('samples-box').style.borderColor = n > max || n < 16 ? 'var(--danger)' : '';
   el.textContent = '= ' + formatTime(n / rate, 3) + (n > max ? ` (max ${formatSI(max)})` : '');
 }
 

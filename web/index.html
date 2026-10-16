@@ -22,10 +22,12 @@
       </label>
       <label class="field">
         <span>Samples</span>
-        <input id="samples" value="10M" spellcheck="false" autocomplete="off"
-               title="Number of samples, e.g. 500k, 2.5M, 30M">
-        <select id="sample-presets" class="preset" title="Sample count presets"
-                aria-label="Sample count presets"></select>
+        <span class="combo" id="samples-box">
+          <input id="samples" value="10M" spellcheck="false" autocomplete="off"
+                 title="Number of samples, e.g. 500k, 2.5M, 30M">
+          <select id="sample-presets" title="Sample count presets"
+                  aria-label="Sample count presets"></select>
+        </span>
       </label>
       <span class="hint" id="duration"></span>
       <label class="field">
