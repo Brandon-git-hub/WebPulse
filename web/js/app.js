@@ -202,6 +202,29 @@ function currentRate() {
   return Number($('rate').value) || 0;
 }
 
+const SAMPLE_PRESETS = [1e3, 10e3, 100e3, 1e6, 2e6, 5e6, 10e6, 30e6, 50e6, 100e6, 256e6];
+
+// Presets up to the server's limit, each labelled with its duration at the
+// current rate. The first (hidden) option keeps the picker showing just "▾".
+function updateSamplePresets() {
+  const sel = $('sample-presets');
+  const rate = currentRate();
+  const max = app.device ? app.device.max_samples : Infinity;
+  sel.textContent = '';
+  const head = document.createElement('option');
+  head.value = '';
+  head.textContent = '▾';
+  head.hidden = true;
+  sel.appendChild(head);
+  for (const n of SAMPLE_PRESETS.filter((n) => n <= max)) {
+    const o = document.createElement('option');
+    o.value = formatSI(n);
+    o.textContent = formatSI(n) + (rate ? `  (${formatTime(n / rate, 3)})` : '');
+    sel.appendChild(o);
+  }
+  sel.value = '';
+}
+
 function updateDuration() {
   const n = parseSI($('samples').value);
   const rate = currentRate();
@@ -553,7 +576,18 @@ async function init() {
   }
   $('samples').addEventListener('input', updateDuration);
   $('samples').addEventListener('change', saveSettings);
-  $('rate').addEventListener('change', () => { updateDuration(); saveSettings(); });
+  $('sample-presets').addEventListener('change', (ev) => {
+    if (!ev.target.value) return;
+    $('samples').value = ev.target.value;
+    ev.target.value = '';
+    updateDuration();
+    saveSettings();
+  });
+  $('rate').addEventListener('change', () => {
+    updateDuration();
+    updateSamplePresets();
+    saveSettings();
+  });
   $('pre').addEventListener('change', saveSettings);
   $('timeout').addEventListener('change', saveSettings);
   $('run').addEventListener('click', runCapture);
@@ -580,6 +614,7 @@ async function init() {
     toast('Cannot reach the WebPulse server: ' + e.message);
   }
   updateDuration();
+  updateSamplePresets();
   connect();
 }
 

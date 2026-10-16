@@ -89,6 +89,8 @@ select, input {
 }
 select:focus, input:focus { border-color: var(--accent); }
 #samples { width: 80px; }
+/* Preset picker next to the samples box: shows only its arrow. */
+select.preset { width: 30px; padding: 5px 4px; margin-left: -4px; color: var(--muted); }
 #pre, #timeout { width: 64px; }
 
 button, .button {

@@ -128,6 +128,15 @@ check($('rate').children.length === 16, 'rate list populated from /api/device');
 $('rate').value = '24000000';
 check($('device').textContent.includes('simulator'), 'device label shows backend model');
 check($('duration').textContent.includes('83.3 ms'), `duration label (${$('duration').textContent})`);
+{
+  const presets = $('sample-presets');
+  const opt = presets.children.find((o) => o.value === '1M');
+  check(opt && opt.textContent.includes('41.7 ms'), `sample presets labelled with duration (${opt && opt.textContent})`);
+  presets.value = '1M';
+  presets.dispatch('change', { target: presets });
+  check($('samples').value === '1M' && $('duration').textContent.includes('41.7 ms'), 'preset sets the sample count');
+  $('samples').value = '2M';
+}
 
 await waitFor(() => $('state').dataset.state !== 'offline', 3000, 'websocket');
 check($('state').dataset.state !== 'offline', `websocket connected, state=${$('state').dataset.state}`);
