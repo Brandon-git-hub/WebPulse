@@ -5,6 +5,9 @@
 - Protocol decoders: UART, SPI, I²C, Parallel and Counter, shown as rows
   below the channels; your own decoders as JavaScript files in `decoders/`
   (see README). New `/api/transitions` and `/api/decoders` endpoints.
+- Open and save sigrok / PulseView session files (`.sr`), in the UI (also by
+  dropping a file) and on the command line (`--open`, `-o file.sr`).
+- Save the view as PNG.
 - Light theme (or follow the system); one Run/Stop button.
 - Reorder channels by dragging.
 

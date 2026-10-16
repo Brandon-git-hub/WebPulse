@@ -11,6 +11,10 @@ FX2 board ──USB──▶ webpulse (C: libusb + CivetWeb) ──HTTP/WebSocke
 
 - Fixed-length capture up to 24 MHz, with a software trigger (level and edge
   conditions per channel) and an adjustable pre-trigger share.
+- Protocol decoders (UART, SPI, I²C, parallel bus, counter) and your own in
+  JavaScript.
+- Opens and saves sigrok / PulseView session files (`.sr`); exports VCD, CSV
+  and PNG.
 - The browser asks only for the part it is showing. Each reply is about 2 bytes
   per pixel, however long the capture, and a 256M-sample capture answers in
   under 1 ms.
@@ -75,10 +79,12 @@ If port 9002 is taken (some editors and tools listen on it) WebPulse uses the
 next free one up to 9011 and prints the address. With `-p PORT` it uses exactly
 that port and stops with the reason if it cannot.
 
-One-shot capture without the UI:
+One-shot capture without the UI, and converting a file:
 
 ```bash
 webpulse -c -r 24M -n 10M -t XXXXXXXR --pre 10 -o capture.vcd
+webpulse --open capture.sr -o capture.vcd       # .sr -> .vcd / .csv / .sr
+webpulse --open capture.sr                       # show a file in the UI
 ```
 
 The trigger is 8 characters, one per channel, with character *i* applying to
@@ -113,6 +119,15 @@ in the status bar step cursor A (Shift: B) like `[` / `]`.
 Behind code-server, run the daemon in the container and open
 `https://<code-server>/proxy/9002/`. The UI uses only relative URLs, so it
 works under that path prefix.
+
+## Files
+
+**Open** (or dropping a file on the page) loads a sigrok session file, as
+saved by PulseView or sigrok-cli; channel names come from the file and the
+channels it does not have are hidden. **Save .sr** writes one that PulseView
+opens, with the channel names and only the shown channels; the trigger
+position is kept for WebPulse. Files with more than 8 channels load their
+first 8. Opening a file replaces the current capture.
 
 ## Protocol decoders
 
@@ -222,7 +237,8 @@ the board after uploading the firmware.
 | POST | `/api/capture` | `{"rate":24000000,"samples":10000000,"pre":0.1,"trigger":"XXXXXXXR","timeout_ms":0}` |
 | POST | `/api/stop` | stop; samples captured after the trigger are kept |
 | GET | `/api/status` | `idle / armed / capturing / processing / done / error`, progress; `capture.changing` = mask of channels that toggle |
-| GET | `/api/export?fmt=vcd\|csv[&names=a,b,…][&channels=0-3,6][&changes=0]` | download the capture (`channels`: which channels to include, default all) |
+| GET | `/api/export?fmt=vcd\|csv\|sr[&names=a,b,…][&channels=0-3,6][&changes=0]` | download the capture (`channels`: which channels to include, default all) |
+| POST | `/api/open?name=FILE.sr` | body: a sigrok session file; it becomes the current capture |
 | GET | `/api/transitions?mask=M[&from=S]` | binary list of the samples where the channels in mask `M` change (used by the decoders; see `api_transitions` in `src/server.c`) |
 | GET | `/api/decoders`, `/api/decoders/NAME.js` | the user decoder files in `--decoders DIR` |
 

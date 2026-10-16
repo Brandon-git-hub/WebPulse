@@ -131,6 +131,11 @@
     </div>
 
     <div class="group right">
+      <button id="open" title="Open a sigrok / PulseView session file (.sr)">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 3h5l1.5 1.5h6.5v9h-13zM3 6v6h10V6z"/></svg>Open
+      </button>
+      <input id="open-file" type="file" accept=".sr" hidden>
+      <a id="export-sr" class="button disabled" download title="Save as a sigrok session file (.sr), opens in PulseView">Save .sr</a>
       <a id="export-vcd" class="button disabled" download>VCD</a>
       <a id="export-csv" class="button disabled" download>CSV</a>
       <button id="export-png" title="Save the current view as a PNG image" disabled>PNG</button>

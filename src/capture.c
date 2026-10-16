@@ -429,6 +429,49 @@ int wp_engine_start(wp_engine *e, const wp_capture_cfg *cfg, char *err, size_t e
     return 0;
 }
 
+int wp_engine_load(wp_engine *e, uint8_t *raw, uint64_t n, uint64_t rate, int64_t trigger_pos,
+                   const char names[8][32], const char *note, char *err, size_t errlen)
+{
+    int expected = 0;
+    wp_store *s;
+
+    if (!atomic_compare_exchange_strong(&e->busy, &expected, 1)) {
+        free(raw);
+        snprintf(err, errlen, "a capture is running; stop it first");
+        return -1;
+    }
+    if (e->worker_valid) {
+        pthread_join(e->worker, NULL);
+        e->worker_valid = 0;
+    }
+    s = wp_store_new(raw, n, rate, trigger_pos);
+    if (!s) {
+        atomic_store(&e->busy, 0);
+        snprintf(err, errlen, "out of memory while building the capture index");
+        return -1;
+    }
+    if (names)
+        memcpy(s->names, names, sizeof(s->names));
+    pthread_mutex_lock(&e->lock);
+    if (e->store)
+        wp_store_unref(e->store);
+    e->store = s;
+    memset(&e->st.error, 0, sizeof(e->st.error));
+    if (note)
+        wp_strlcpy(e->st.error, note, sizeof(e->st.error));
+    e->st.state = WP_ST_DONE;
+    e->st.rate = rate;
+    e->st.samples = n;
+    e->st.filled = n;
+    e->st.elapsed_ms = 0;
+    e->st.trigger_pos = trigger_pos;
+    e->st.trigger[0] = '\0';
+    e->st.seq++;
+    pthread_mutex_unlock(&e->lock);
+    atomic_store(&e->busy, 0);
+    return 0;
+}
+
 void wp_engine_stop(wp_engine *e)
 {
     atomic_store(&e->stop_req, 1);

@@ -33,6 +33,7 @@ typedef struct wp_store {
     uint64_t rate;
     int64_t trigger_pos;        /* sample index, -1 if untriggered */
     uint8_t changing;           /* bit c set = CHc has both levels in the capture */
+    char names[8][32];          /* channel names from an opened file, "" otherwise */
     int nlevels;
     wp_store_level lv[WP_STORE_MAX_LEVELS];
 } wp_store;

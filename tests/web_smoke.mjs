@@ -481,5 +481,23 @@ check($('run').dataset.mode === 'run' && !$('run').disabled, 'Run button back to
   check(st.channels[0].color === null && st.channels[1].color === '#123456', 'only picked colours saved');
 }
 
+// Save as .sr (CH0 "rx", CH1 "tx", only those two) and open it again
+{
+  const n0 = $('state-detail').textContent;
+  const sr = await (await fetch(new URL('api/export?fmt=sr&names=rx,tx&channels=0,1', base))).arrayBuffer();
+  check(new Uint8Array(sr)[0] === 0x50 && new Uint8Array(sr)[1] === 0x4b, `.sr is a ZIP (${sr.byteLength} bytes)`);
+  $('open-file').files = [new File([sr], 'roundtrip.sr')];
+  $('open-file').dispatch('change');
+  await waitFor(() => $('state-detail').textContent.includes('opened roundtrip.sr'), 10000, 'opened file');
+  check($('state-detail').textContent.startsWith(n0.split(' ·')[0]), `same samples / rate (${$('state-detail').textContent})`);
+  const rows = $('channels').children;
+  const rowOf = (c) => rows.find((r) => r.dataset.ch === c);
+  check(rowOf(0).querySelector('.name').value === 'rx' && rowOf(1).querySelector('.name').value === 'tx',
+    'names from the file applied');
+  check(!rowOf(0).hidden && !rowOf(1).hidden && rowOf(2).hidden && rowOf(7).hidden, 'channels not in the file hidden');
+  const bad = await fetch(new URL('api/open?name=x.sr', base), { method: 'POST', body: 'not a zip' });
+  check(bad.status === 422 && /ZIP/.test((await bad.json()).error), 'invalid file rejected');
+}
+
 console.log(failures ? `${failures} failure(s)` : 'all web smoke checks passed');
 process.exit(failures ? 1 : 0);

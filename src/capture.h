@@ -60,6 +60,15 @@ void wp_engine_status(wp_engine *e, wp_capture_status *st);
 uint64_t wp_engine_max_samples(wp_engine *e);
 wp_device *wp_engine_device(wp_engine *e);
 
+/*
+ * Make samples loaded from a file the current capture (state DONE). Takes
+ * ownership of raw (malloc'd, freed on failure too). names (may be NULL) are
+ * the file's channel names; note, if not NULL, is shown with the capture
+ * like a device note. Fails while a capture runs.
+ */
+int wp_engine_load(wp_engine *e, uint8_t *raw, uint64_t n, uint64_t rate, int64_t trigger_pos,
+                   const char names[8][32], const char *note, char *err, size_t errlen);
+
 /* Returns a referenced store or NULL; release with wp_store_unref(). */
 wp_store *wp_engine_store(wp_engine *e);
 

@@ -38,8 +38,10 @@ add_library(wpcore STATIC
     src/json.c
     src/platform.c
     src/ringbuf.c
+    src/sr.c
     src/trigger.c
     src/util.c
+    src/zip.c
 )
 target_include_directories(wpcore PUBLIC src)
 target_compile_options(wpcore PRIVATE ${WP_WARNINGS})
@@ -102,7 +104,7 @@ add_custom_command(TARGET webpulse POST_BUILD
 # --- tests (native builds only) -------------------------------------------------
 if(NOT CMAKE_CROSSCOMPILING)
     enable_testing()
-    foreach(t trigger store fx2_proto json capture export)
+    foreach(t trigger store fx2_proto json capture export sr)
         add_executable(test_${t} tests/test_${t}.c)
         target_link_libraries(test_${t} PRIVATE wpcore)
         target_compile_options(test_${t} PRIVATE ${WP_WARNINGS})

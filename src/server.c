@@ -4,7 +4,8 @@
  *   POST /api/capture  {rate, samples, pre, trigger, timeout_ms}
  *   POST /api/stop
  *   GET  /api/status
- *   GET  /api/export?fmt=vcd|csv[&changes=0|1][&names=a,b,...][&channels=0-3,6]
+ *   GET  /api/export?fmt=vcd|csv|sr[&changes=0|1][&names=a,b,...][&channels=0-3,6]
+ *   POST /api/open?name=FILE.sr          load a sigrok session file (body = file)
  *   GET  /api/transitions?mask=M[&from=S][&limit=N]   changes of the masked
  *        channels, binary (see api_transitions); used by the protocol decoders
  *   GET  /api/decoders                   user decoder files in --decoders DIR
@@ -23,6 +24,7 @@
  */
 #include "server.h"
 #include "export.h"
+#include "sr.h"
 #include "json.h"
 #include "platform.h"
 #include "util.h"
@@ -50,6 +52,8 @@ extern const wp_asset wp_assets[];
 #define MAX_WS_CLIENTS 16   /* each WebSocket holds one CivetWeb worker thread */
 #define MAX_QUERY_WIDTH 8192
 #define WS_HEADER_LEN 24
+
+#define STATUS_JSON_MAX 2048     /* status_json() output, names included */
 
 struct wp_server {
     struct mg_context *ctx;
@@ -142,10 +146,23 @@ static size_t status_json(wp_server *s, char *out, size_t len)
         return len - 1;
     store = wp_engine_store(s->engine);
     if (store) {
+        int c, any = 0;
         n += (size_t)snprintf(out + n, len - n,
-            "{\"n\":%llu,\"rate\":%llu,\"trigger_pos\":%lld,\"changing\":%u}}",
+            "{\"n\":%llu,\"rate\":%llu,\"trigger_pos\":%lld,\"changing\":%u",
             (unsigned long long)store->n, (unsigned long long)store->rate,
             (long long)store->trigger_pos, (unsigned)store->changing);
+        for (c = 0; c < 8; c++)
+            any |= store->names[c][0] != 0;
+        /* Names only for an opened file, which brings its own. */
+        for (c = 0; any && c < 8 && n < len; c++) {
+            char e[80];
+            wp_json_escape(store->names[c], e, sizeof(e));
+            n += (size_t)snprintf(out + n, len - n, "%s\"%s\"", c ? "," : ",\"names\":[", e);
+        }
+        if (any && n < len)
+            n += (size_t)snprintf(out + n, len - n, "]");
+        if (n < len)
+            n += (size_t)snprintf(out + n, len - n, "}}");
         wp_store_unref(store);
     } else {
         n += (size_t)snprintf(out + n, len - n, "null}");
@@ -245,8 +262,8 @@ static int api_export(struct mg_connection *conn, wp_server *s,
             p = comma ? comma + 1 : NULL;
         }
     }
-    if (strcmp(fmt, "vcd") != 0 && strcmp(fmt, "csv") != 0)
-        return send_error(conn, 400, "fmt must be vcd or csv");
+    if (strcmp(fmt, "vcd") != 0 && strcmp(fmt, "csv") != 0 && strcmp(fmt, "sr") != 0)
+        return send_error(conn, 400, "fmt must be vcd, csv or sr");
     if (mg_get_var(qs, qlen, "channels", chans, sizeof(chans)) >= 0 &&
         wp_parse_channels(chans, &mask) < 0)
         return send_error(conn, 400, "channels must be a list such as 0-3,6");
@@ -261,10 +278,11 @@ static int api_export(struct mg_connection *conn, wp_server *s,
     localtime_r(&now, &tmv);
 #endif
     strftime(fname, sizeof(fname), "webpulse-%Y%m%d-%H%M%S", &tmv);
-    mime = fmt[0] == 'v' ? "text/plain" : "text/csv";
+    mime = fmt[0] == 'v' ? "text/plain; charset=utf-8"
+         : fmt[0] == 'c' ? "text/csv; charset=utf-8" : "application/octet-stream";
     mg_printf(conn,
               "HTTP/1.1 200 OK\r\n"
-              "Content-Type: %s; charset=utf-8\r\n"
+              "Content-Type: %s\r\n"
               "Content-Disposition: attachment; filename=\"%s.%s\"\r\n"
               "Cache-Control: no-store\r\n"
               "Connection: close\r\n"
@@ -272,9 +290,11 @@ static int api_export(struct mg_connection *conn, wp_server *s,
               mime, fname, fmt);
     if (fmt[0] == 'v')
         wp_export_vcd(store, (const char *const *)names, mask, http_write, &w);
-    else
+    else if (fmt[0] == 'c')
         wp_export_csv(store, (const char *const *)names, mask, changes[0] != '0',
                       http_write, &w);
+    else
+        wp_sr_write(store, (const char *const *)names, mask, http_write, &w);
     wp_store_unref(store);
     return 200;
 }
@@ -357,6 +377,62 @@ static int api_transitions(struct mg_connection *conn, wp_server *s,
     mg_write(conn, buf, hdr + count * 9);
     free(buf);
     return 200;
+}
+
+/*
+ * POST /api/open?name=FILE.sr with the file as the body: load a sigrok session
+ * file as the current capture. Replies with the channel names it holds.
+ */
+#define OPEN_MAX_BYTES (4ull << 30)
+
+static int api_open(struct mg_connection *conn, wp_server *s, const struct mg_request_info *ri)
+{
+    const char *qs = ri->query_string ? ri->query_string : "";
+    char fname[128] = "file", err[200], note[200], body[1024], esc[160];
+    long long len = ri->content_length;
+    uint8_t *buf;
+    long long got = 0;
+    wp_sr_capture c;
+    size_t n;
+    int i, first = 1;
+
+    mg_get_var(qs, strlen(qs), "name", fname, sizeof(fname));
+    if (len <= 0)
+        return send_error(conn, 411, "send the file as the request body (with Content-Length)");
+    if ((unsigned long long)len > OPEN_MAX_BYTES)
+        return send_error(conn, 413, "file too large");
+    buf = malloc((size_t)len);
+    if (!buf)
+        return send_error(conn, 503, "out of memory for the file");
+    while (got < len) {
+        int r = mg_read(conn, buf + got, (size_t)(len - got < (1 << 20) ? len - got : (1 << 20)));
+        if (r <= 0)
+            break;
+        got += r;
+    }
+    if (got != len) {
+        free(buf);
+        return send_error(conn, 400, "upload incomplete");
+    }
+    if (wp_sr_read(buf, (size_t)len, wp_engine_max_samples(s->engine), &c, err, sizeof(err)) < 0) {
+        free(buf);
+        return send_error(conn, 422, err);
+    }
+    free(buf);
+    snprintf(note, sizeof(note), "opened %s%s%s", fname, c.note[0] ? " · " : "", c.note);
+    if (wp_engine_load(s->engine, c.raw, c.n, c.rate, c.trigger_pos,
+                       (const char (*)[32])c.names, note, err, sizeof(err)) < 0)
+        return send_error(conn, 409, err);
+
+    n = (size_t)snprintf(body, sizeof(body), "{\"ok\":true,\"n\":%llu,\"rate\":%llu,\"mask\":%u,\"names\":[",
+                         (unsigned long long)c.n, (unsigned long long)c.rate, c.mask);
+    for (i = 0; i < 8; i++) {
+        wp_json_escape(c.names[i], esc, sizeof(esc));
+        n += (size_t)snprintf(body + n, sizeof(body) - n, "%s\"%s\"", first ? "" : ",", esc);
+        first = 0;
+    }
+    snprintf(body + n, sizeof(body) - n, "]}");
+    return send_json(conn, 200, body);
 }
 
 /* A user decoder file name: [A-Za-z0-9_.-]+.js, not starting with a dot. */
@@ -450,7 +526,7 @@ static int api_handler(struct mg_connection *conn, void *cbdata)
     if (strcmp(uri, "/api/device") == 0)
         return is_get ? api_device(conn, s) : send_error(conn, 405, "use GET");
     if (strcmp(uri, "/api/status") == 0) {
-        char body[1024];
+        char body[STATUS_JSON_MAX];
         if (!is_get)
             return send_error(conn, 405, "use GET");
         status_json(s, body, sizeof(body));
@@ -466,6 +542,8 @@ static int api_handler(struct mg_connection *conn, void *cbdata)
     }
     if (strcmp(uri, "/api/export") == 0)
         return is_get ? api_export(conn, s, ri) : send_error(conn, 405, "use GET");
+    if (strcmp(uri, "/api/open") == 0)
+        return is_post ? api_open(conn, s, ri) : send_error(conn, 405, "use POST");
     if (strcmp(uri, "/api/transitions") == 0)
         return is_get ? api_transitions(conn, s, ri) : send_error(conn, 405, "use GET");
     if (strcmp(uri, "/api/decoders") == 0)
@@ -617,7 +695,7 @@ static int ws_connect(const struct mg_connection *conn, void *cbdata)
 static void ws_ready(struct mg_connection *conn, void *cbdata)
 {
     wp_server *s = cbdata;
-    char st[1024];
+    char st[STATUS_JSON_MAX];
 
     status_json(s, st, sizeof(st));
     pthread_mutex_lock(&s->ws_lock);
@@ -644,7 +722,7 @@ static int ws_data(struct mg_connection *conn, int bits, char *data, size_t len,
     } else if (strcmp(type, "edges") == 0) {
         ws_edges(s, conn, data, len);
     } else if (strcmp(type, "status") == 0) {
-        char st[1024];
+        char st[STATUS_JSON_MAX];
         status_json(s, st, sizeof(st));
         ws_send_text(conn, st);
     }
@@ -672,7 +750,7 @@ static void *status_main(void *arg)
     wp_server *s = arg;
     uint32_t last_seq = 0;
     uint64_t last_push = 0;
-    char st[1024];
+    char st[STATUS_JSON_MAX];
 
     while (!atomic_load(&s->quit)) {
         wp_capture_status cs;

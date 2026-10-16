@@ -9,6 +9,7 @@
 #include "export.h"
 #include "platform.h"
 #include "server.h"
+#include "sr.h"
 #include "util.h"
 
 #include <signal.h>
@@ -52,6 +53,7 @@ typedef struct {
     double pre_pct;
     uint32_t timeout_ms;
     const char *output;
+    const char *open;           /* .sr file to load */
     unsigned channels;          /* channel mask for the output file */
     int list_rates;
 } options;
@@ -83,9 +85,12 @@ static void usage(FILE *f)
         "  -t, --trigger SPEC       8 chars of X/0/1/R/F/E, char i = CH i (default none)\n"
         "      --pre PCT            pre-trigger percentage 0..100 (default 10)\n"
         "      --timeout MS         trigger timeout in ms, 0 = forever (default 0)\n"
-        "  -o, --output FILE        output file, .vcd or .csv\n"
+        "  -o, --output FILE        output file: .vcd, .csv or .sr (sigrok / PulseView)\n"
         "      --channels LIST      channels to write, e.g. 0-3,6 (default 0-7)\n"
         "\n"
+        "\n"
+        "      --open FILE.sr       load a sigrok session file: with -o, convert it\n"
+        "                           and exit; otherwise show it in the UI\n"
         "  -L, --list-rates         list supported sample rates\n"
         "  -V, --version\n"
         "  -h, --help\n",
@@ -166,6 +171,8 @@ static int parse_args(int argc, char **argv, options *o)
         } else if (strcmp(a, "--timeout") == 0) {
             if (need_arg(argc, argv, &i, &v)) return -1;
             o->timeout_ms = (uint32_t)strtoul(v, NULL, 10);
+        } else if (strcmp(a, "--open") == 0) {
+            if (need_arg(argc, argv, &i, &o->open)) return -1;
         } else if (IS("-o", "--output")) {
             if (need_arg(argc, argv, &i, &o->output)) return -1;
         } else if (strcmp(a, "--channels") == 0) {
@@ -242,25 +249,95 @@ static const char *ext_of(const char *path)
     return dot ? dot + 1 : "";
 }
 
+/* Output format from the file name: 'v' (VCD), 'c' (CSV), 's' (sigrok .sr) or 0. */
+static int output_kind(const char *path)
+{
+    const char *x = ext_of(path);
+    return strcmp(x, "vcd") == 0 ? 'v' : strcmp(x, "csv") == 0 ? 'c' : strcmp(x, "sr") == 0 ? 's' : 0;
+}
+
+static int write_output(const wp_store *store, const options *o, const char *const *names)
+{
+    FILE *f = fopen(o->output, "wb");
+    int kind = output_kind(o->output), rc;
+    if (!f) {
+        perror(o->output);
+        return 1;
+    }
+    rc = kind == 'c' ? wp_export_csv(store, names, o->channels, 1, wp_write_file, f)
+       : kind == 's' ? wp_sr_write(store, names, o->channels, wp_write_file, f)
+                     : wp_export_vcd(store, names, o->channels, wp_write_file, f);
+    if (fclose(f) != 0)
+        rc = -1;
+    if (rc == 0) {
+        fprintf(stderr, "wrote %s (%llu samples", o->output, (unsigned long long)store->n);
+        if (store->trigger_pos >= 0)
+            fprintf(stderr, ", trigger at sample %lld", (long long)store->trigger_pos);
+        fprintf(stderr, ")\n");
+    } else {
+        fprintf(stderr, "webpulse: error writing %s\n", o->output);
+    }
+    return rc == 0 ? 0 : 1;
+}
+
+/* Read a whole .sr file and parse it. */
+static int load_sr(const char *path, uint64_t max_samples, wp_sr_capture *c)
+{
+    FILE *f = fopen(path, "rb");
+    uint8_t *buf = NULL;
+    long len;
+    char err[200];
+    int rc = -1;
+
+    if (!f) {
+        perror(path);
+        return -1;
+    }
+    if (fseek(f, 0, SEEK_END) == 0 && (len = ftell(f)) > 0 && fseek(f, 0, SEEK_SET) == 0 &&
+        (buf = malloc((size_t)len)) && fread(buf, 1, (size_t)len, f) == (size_t)len) {
+        rc = wp_sr_read(buf, (size_t)len, max_samples, c, err, sizeof(err));
+        if (rc < 0)
+            fprintf(stderr, "webpulse: %s: %s\n", path, err);
+        else if (c->note[0])
+            fprintf(stderr, "webpulse: %s: %s\n", path, c->note);
+    } else {
+        fprintf(stderr, "webpulse: cannot read %s\n", path);
+    }
+    free(buf);
+    fclose(f);
+    return rc;
+}
+
+/* --open FILE.sr -o OUT: convert without a device. */
+static int run_convert(const options *o)
+{
+    wp_sr_capture c;
+    const char *names[8];
+    wp_store *store;
+    int i, rc;
+
+    if (load_sr(o->open, UINT64_MAX, &c) < 0)
+        return 1;
+    for (i = 0; i < 8; i++)
+        names[i] = c.names[i][0] ? c.names[i] : NULL;
+    store = wp_store_new(c.raw, c.n, c.rate, c.trigger_pos);
+    if (!store) {
+        fprintf(stderr, "webpulse: out of memory\n");
+        return 1;
+    }
+    rc = write_output(store, o, names);
+    wp_store_unref(store);
+    return rc;
+}
+
 static int run_capture(wp_engine *e, const options *o)
 {
     wp_capture_cfg cfg;
     wp_capture_status st;
     wp_store *store;
     char err[200], rate_str[32];
-    FILE *f;
-    int csv, rc;
+    int rc;
     uint64_t last = 0;
-
-    if (!o->output) {
-        fprintf(stderr, "webpulse: --capture needs --output FILE.vcd|.csv\n");
-        return 2;
-    }
-    csv = strcmp(ext_of(o->output), "csv") == 0;
-    if (!csv && strcmp(ext_of(o->output), "vcd") != 0) {
-        fprintf(stderr, "webpulse: output must end in .vcd or .csv\n");
-        return 2;
-    }
 
     memset(&cfg, 0, sizeof(cfg));
     cfg.rate = o->rate;
@@ -303,26 +380,9 @@ static int run_capture(wp_engine *e, const options *o)
         fprintf(stderr, "webpulse: warning: %s\n", st.error);
 
     store = wp_engine_store(e);
-    f = fopen(o->output, "wb");
-    if (!f) {
-        perror(o->output);
-        wp_store_unref(store);
-        return 1;
-    }
-    rc = csv ? wp_export_csv(store, NULL, o->channels, 1, wp_write_file, f)
-             : wp_export_vcd(store, NULL, o->channels, wp_write_file, f);
-    if (fclose(f) != 0)
-        rc = -1;
-    if (rc == 0) {
-        fprintf(stderr, "wrote %s (%llu samples", o->output, (unsigned long long)store->n);
-        if (store->trigger_pos >= 0)
-            fprintf(stderr, ", trigger at sample %lld", (long long)store->trigger_pos);
-        fprintf(stderr, ")\n");
-    } else {
-        fprintf(stderr, "webpulse: error writing %s\n", o->output);
-    }
+    rc = write_output(store, o, NULL);
     wp_store_unref(store);
-    return rc == 0 ? 0 : 1;
+    return rc;
 }
 
 static int run_server(wp_engine *e, const options *o)
@@ -401,6 +461,21 @@ int main(int argc, char **argv)
         return 0;
     }
 
+    if ((o.capture || o.open) && o.output && !output_kind(o.output)) {
+        fprintf(stderr, "webpulse: output must end in .vcd, .csv or .sr\n");
+        return 2;
+    }
+    if (o.capture && !o.output) {
+        fprintf(stderr, "webpulse: --capture needs --output FILE.vcd|.csv|.sr\n");
+        return 2;
+    }
+    if (o.capture && o.open) {
+        fprintf(stderr, "webpulse: use either --capture or --open\n");
+        return 2;
+    }
+    if (o.open && o.output)
+        return run_convert(&o);
+
     signal(SIGINT, on_signal);
     signal(SIGTERM, on_signal);
 
@@ -434,6 +509,19 @@ int main(int argc, char **argv)
         /* One-shot runs the simulator flat out unless asked otherwise. */
         rc = run_capture(e, &o);
     } else {
+        if (o.open) {
+            wp_sr_capture c;
+            char note[300];
+            if (load_sr(o.open, o.max_samples, &c) < 0) {
+                wp_engine_free(e);
+                wp_device_destroy(dev);
+                return 1;
+            }
+            snprintf(note, sizeof(note), "opened %s", o.open);
+            if (wp_engine_load(e, c.raw, c.n, c.rate, c.trigger_pos,
+                               (const char (*)[32])c.names, note, err, sizeof(err)) < 0)
+                fprintf(stderr, "webpulse: %s\n", err);
+        }
         rc = run_server(e, &o);
     }
 

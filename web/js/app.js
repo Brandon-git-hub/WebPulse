@@ -907,11 +907,12 @@ function updateExportLinks() {
   const names = encodeURIComponent(channels.map((c) => c.name.replace(/,/g, '_')).join(','));
   const on = channels.flatMap((c, i) => (c.enabled ? [i] : []));
   const sel = on.length === CHANNELS ? '' : `&channels=${on.join(',')}`;
-  for (const fmt of ['vcd', 'csv']) {
+  for (const fmt of ['sr', 'vcd', 'csv']) {
     const a = $('export-' + fmt);
     a.classList.toggle('disabled', !has);
     a.href = has ? `api/export?fmt=${fmt}&names=${names}${sel}` : '#';
-    a.title = has ? `Download the capture as ${fmt.toUpperCase()}` +
+    a.title = has ? (fmt === 'sr' ? 'Save as a sigrok session file (.sr), opens in PulseView'
+      : `Download the capture as ${fmt.toUpperCase()}`) +
       (sel ? ` (CH${on.join(', CH')})` : '') : 'No capture';
   }
 }
@@ -980,6 +981,39 @@ function showDevice(d) {
   $('device').title = $('device').textContent;
 }
 
+/** Upload a .sr file; the new capture then arrives through the status. */
+async function openFile(file) {
+  if (!file) return;
+  toast(`Opening ${file.name}…`, 'info');
+  try {
+    const r = await fetch(`api/open?name=${encodeURIComponent(file.name)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
+    });
+    const js = await r.json().catch(() => ({}));
+    if (!r.ok || !js.ok) throw new Error(js.error || `${r.status} ${r.statusText}`);
+  } catch (e) {
+    toast(`Cannot open ${file.name}: ${e.message}`);
+  }
+}
+
+/** An opened file brings channel names; channels it does not have are hidden. */
+function applyFileChannels(names) {
+  const any = names.some((n) => n);
+  channels.forEach((ch, c) => {
+    ch.name = names[c] || `CH${c}`;
+    if (any) ch.enabled = !!names[c];
+    if (ch.row) {
+      ch.row.querySelector('.name').value = ch.name;
+      ch.row.hidden = !ch.enabled;
+    }
+  });
+  renderer.relayout();
+  updateChannelPicker();
+  saveSettings();
+}
+
 function showCapture(cap) {
   // The device may have been (re)connected for this capture; refresh its label.
   api('api/device').then((d) => { app.device = d; showDevice(d); }).catch(() => {});
@@ -990,6 +1024,7 @@ function showCapture(cap) {
   updateMeasureReadout();
   renderer.cursors = { a: null, b: null };
   $('empty').hidden = true;
+  if (Array.isArray(cap.names)) applyFileChannels(cap.names);
   vp.setCapture({ n: cap.n, rate: cap.rate, trigger_pos: cap.trigger_pos });
   updateChannelPicker();
   updateExportLinks();
@@ -1438,6 +1473,19 @@ async function init() {
   $('timeout').addEventListener('change', saveSettings);
   $('run').addEventListener('click', toggleRun);
   $('export-png').addEventListener('click', exportPng);
+  $('open').addEventListener('click', () => $('open-file').click());
+  $('open-file').addEventListener('change', (ev) => {
+    openFile(ev.target.files && ev.target.files[0]);
+    ev.target.value = '';           // the same file can be opened again
+  });
+  // Dropping a .sr file anywhere opens it too.
+  document.addEventListener('dragover', (ev) => ev.preventDefault());
+  document.addEventListener('drop', (ev) => {
+    const f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+    if (!f) return;
+    ev.preventDefault();
+    openFile(f);
+  });
   $('theme').addEventListener('click', cycleTheme);
   matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => applyTheme());
   applyTheme();
