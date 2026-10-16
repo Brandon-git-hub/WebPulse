@@ -1,7 +1,7 @@
 // Canvas 2D waveform renderer.
 //
-// Layout (css px): a ruler of RULER_H at the top, then one row of ROW_H per
-// channel. Data comes from the server as either raw samples or per-pixel
+// Layout (css px): a ruler of RULER_H at the top, then one row per channel:
+// ROW_H when the channel is enabled, OFF_H (no waveform) when it is not. Data comes from the server as either raw samples or per-pixel
 // summaries (see server.c); both are mapped into the current viewport so a
 // slightly stale response still lines up while the user pans or zooms.
 
@@ -9,11 +9,13 @@ import { niceStep, tickLabel } from './format.js';
 
 export const RULER_H = 30;
 export const ROW_H = 44;
+export const OFF_H = 22;
 export const CHANNELS = 8;
 
 const COLORS = {
   bg: '#0f1216',
   rowAlt: '#12161b',
+  rowOff: '#0b0d10',
   ruler: '#161a20',
   grid: '#1f252d',
   gridStrong: '#2a313b',
@@ -30,14 +32,34 @@ export class Renderer {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.vp = viewport;
-    this.channels = channels;   // [{ name, color }]
+    this.channels = channels;   // [{ name, color, enabled }]
     this.data = null;           // last query response
     this.cursors = { a: null, b: null };
     this.hoverX = null;
     this.dpr = 1;
     this.cssW = 0;
-    this.cssH = RULER_H + CHANNELS * ROW_H;
+    this.rows = [];             // [{ top, h }] per channel
+    this.layout();
     this.pending = false;
+  }
+
+  /** Recompute row positions from the channels' enabled flags. */
+  layout() {
+    let y = RULER_H;
+    this.rows = this.channels.map((ch) => {
+      const h = ch.enabled ? ROW_H : OFF_H;
+      const r = { top: y, h };
+      y += h;
+      return r;
+    });
+    this.cssH = y;
+  }
+
+  /** Call after enabling or disabling a channel. */
+  relayout() {
+    this.layout();
+    this.cssW = 0;      // force resize() to reallocate the canvas
+    this.resize();
   }
 
   resize() {
@@ -82,10 +104,13 @@ export class Renderer {
     ctx.fillRect(0, 0, W, H);
 
     for (let c = 0; c < CHANNELS; c++) {
-      const y = RULER_H + c * ROW_H;
-      if (c % 2) {
+      const { top, h } = this.rows[c];
+      if (!this.channels[c].enabled) {
+        ctx.fillStyle = COLORS.rowOff;
+        ctx.fillRect(0, top, W, h);
+      } else if (c % 2) {
         ctx.fillStyle = COLORS.rowAlt;
-        ctx.fillRect(0, y, W, ROW_H);
+        ctx.fillRect(0, top, W, h);
       }
     }
 
@@ -108,7 +133,7 @@ export class Renderer {
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let c = 0; c <= CHANNELS; c++) {
-      const y = RULER_H + c * ROW_H - 0.5;
+      const y = (c < CHANNELS ? this.rows[c].top : H) - 0.5;
       ctx.moveTo(0, y);
       ctx.lineTo(W, y);
     }
@@ -203,8 +228,8 @@ export class Renderer {
   }
 
   rowY(c) {
-    const top = RULER_H + c * ROW_H;
-    return { hi: top + 10.5, lo: top + ROW_H - 10.5 };
+    const { top, h } = this.rows[c];
+    return { hi: top + 10.5, lo: top + h - 10.5 };
   }
 
   drawRaw(d, W) {
@@ -219,6 +244,7 @@ export class Renderer {
     ctx.lineWidth = 1.5;
     ctx.lineJoin = 'miter';
     for (let c = 0; c < CHANNELS; c++) {
+      if (!this.channels[c].enabled) continue;
       const { hi, lo } = this.rowY(c);
       const bit = 1 << c;
       ctx.strokeStyle = this.channels[c].color;
@@ -244,6 +270,7 @@ export class Renderer {
       for (let i = i0; i < i1; i++) {
         const x = vp.xOf(d.t0 + i);
         for (let c = 0; c < CHANNELS; c++) {
+          if (!this.channels[c].enabled) continue;
           const { hi, lo } = this.rowY(c);
           ctx.fillRect(x - 1, (raw[i] >> c) & 1 ? hi - 1 : lo - 1, 2, 2);
         }
@@ -261,6 +288,7 @@ export class Renderer {
     for (let p = 0; p <= w; p++) xs[p] = vp.xOf(d.t0 + (span * p) / w);
 
     for (let c = 0; c < CHANNELS; c++) {
+      if (!this.channels[c].enabled) continue;
       const { hi, lo } = this.rowY(c);
       const color = this.channels[c].color;
       const hiBit = 1 << (2 * c), loBit = 1 << (2 * c + 1);

@@ -218,12 +218,24 @@ button.primary:hover:not(:disabled) { filter: brightness(1.1); border-color: var
   align-self: stretch;
   background: var(--c);
 }
+.ch .on {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+}
+.ch .on input { margin: 0; accent-color: var(--c); cursor: pointer; }
 .ch .idx {
-  width: 26px;
+  width: 12px;
   text-align: right;
   color: var(--muted);
   font: 11px var(--mono);
 }
+/* Disabled channel: slim row, matching OFF_H on the canvas. */
+.ch.off { height: var(--row-off-h); }
+.ch.off .bar { opacity: 0.25; }
+.ch.off .name { color: var(--muted); font-size: 12px; padding-top: 0; padding-bottom: 0; }
+.ch.off .color, .ch.off .trig { visibility: hidden; }
 .ch .color {
   position: relative;
   width: 14px;

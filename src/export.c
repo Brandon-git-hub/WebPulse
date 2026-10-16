@@ -91,7 +91,37 @@ static void channel_name(const char *const *names, int c, char *out, size_t len)
     }
 }
 
-int wp_export_vcd(const wp_store *s, const char *const *names, wp_write_fn fn, void *ctx)
+int wp_parse_channels(const char *s, unsigned *mask)
+{
+    unsigned m = 0;
+    while (*s) {
+        int a, b;
+        if (*s < '0' || *s > '7')
+            return -1;
+        a = b = *s++ - '0';
+        if (*s == '-') {
+            s++;
+            if (*s < '0' || *s > '7')
+                return -1;
+            b = *s++ - '0';
+            if (b < a)
+                return -1;
+        }
+        for (; a <= b; a++)
+            m |= 1u << a;
+        if (*s == ',')
+            s++;
+        else if (*s)
+            return -1;
+    }
+    if (!m)
+        return -1;
+    *mask = m;
+    return 0;
+}
+
+int wp_export_vcd(const wp_store *s, const char *const *names, unsigned mask,
+                  wp_write_fn fn, void *ctx)
 {
     outbuf *o = ob_new(fn, ctx);
     uint64_t unit_per_s, i;
@@ -114,8 +144,11 @@ int wp_export_vcd(const wp_store *s, const char *const *names, wp_write_fn fn, v
     ob_printf(o, "\n$end\n");
     ob_printf(o, "$timescale 1 %s $end\n", unit_per_s == 1000000000ull ? "ns" : "ps");
     ob_printf(o, "$scope module webpulse $end\n");
+    mask &= 0xffu;
     for (c = 0; c < 8; c++) {
         char nm[64];
+        if (!(mask & (1u << c)))
+            continue;
         channel_name(names, c, nm, sizeof(nm));
         ob_printf(o, "$var wire 1 %c %s $end\n", '!' + c, nm);
     }
@@ -127,11 +160,12 @@ int wp_export_vcd(const wp_store *s, const char *const *names, wp_write_fn fn, v
     prev = s->raw[0];
     ob_printf(o, "#0\n$dumpvars\n");
     for (c = 0; c < 8; c++)
-        ob_printf(o, "%c%c\n", (prev >> c) & 1 ? '1' : '0', '!' + c);
+        if (mask & (1u << c))
+            ob_printf(o, "%c%c\n", (prev >> c) & 1 ? '1' : '0', '!' + c);
     ob_printf(o, "$end\n");
 
     for (i = 1; i < s->n && !o->err; i++) {
-        uint8_t v = s->raw[i], diff = v ^ prev;
+        uint8_t v = s->raw[i], diff = (uint8_t)((v ^ prev) & mask);
         char line[64];
         size_t n = 0;
         uint64_t t;
@@ -167,8 +201,8 @@ done:
     return err;
 }
 
-int wp_export_csv(const wp_store *s, const char *const *names, int changes_only,
-                  wp_write_fn fn, void *ctx)
+int wp_export_csv(const wp_store *s, const char *const *names, unsigned mask,
+                  int changes_only, wp_write_fn fn, void *ctx)
 {
     outbuf *o = ob_new(fn, ctx);
     uint64_t i;
@@ -177,9 +211,12 @@ int wp_export_csv(const wp_store *s, const char *const *names, int changes_only,
     if (!o)
         return -1;
 
+    mask &= 0xffu;
     ob_printf(o, "sample,time_ns");
     for (c = 0; c < 8; c++) {
         char nm[64];
+        if (!(mask & (1u << c)))
+            continue;
         channel_name(names, c, nm, sizeof(nm));
         ob_printf(o, ",%s", nm);
     }
@@ -190,7 +227,7 @@ int wp_export_csv(const wp_store *s, const char *const *names, int changes_only,
         char line[96];
         size_t n = 0;
         uint64_t ps;
-        if (changes_only && i > 0 && i + 1 < s->n && v == s->raw[i - 1])
+        if (changes_only && i > 0 && i + 1 < s->n && !((v ^ s->raw[i - 1]) & mask))
             continue;
         ps = wp_sample_to_ps(i, s->rate);
         n += u64_dec(line + n, i);
@@ -201,6 +238,8 @@ int wp_export_csv(const wp_store *s, const char *const *names, int changes_only,
         line[n++] = (char)('0' + (ps / 10) % 10);
         line[n++] = (char)('0' + ps % 10);
         for (c = 0; c < 8; c++) {
+            if (!(mask & (1u << c)))
+                continue;
             line[n++] = ',';
             line[n++] = (v >> c) & 1 ? '1' : '0';
         }

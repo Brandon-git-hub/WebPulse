@@ -50,6 +50,7 @@ typedef struct {
     double pre_pct;
     uint32_t timeout_ms;
     const char *output;
+    unsigned channels;          /* channel mask for the output file */
     int list_rates;
 } options;
 
@@ -78,6 +79,7 @@ static void usage(FILE *f)
         "      --pre PCT            pre-trigger percentage 0..100 (default 10)\n"
         "      --timeout MS         trigger timeout in ms, 0 = forever (default 0)\n"
         "  -o, --output FILE        output file, .vcd or .csv\n"
+        "      --channels LIST      channels to write, e.g. 0-3,6 (default 0-7)\n"
         "\n"
         "  -L, --list-rates         list supported sample rates\n"
         "  -V, --version\n"
@@ -158,6 +160,12 @@ static int parse_args(int argc, char **argv, options *o)
             o->timeout_ms = (uint32_t)strtoul(v, NULL, 10);
         } else if (IS("-o", "--output")) {
             if (need_arg(argc, argv, &i, &o->output)) return -1;
+        } else if (strcmp(a, "--channels") == 0) {
+            if (need_arg(argc, argv, &i, &v)) return -1;
+            if (wp_parse_channels(v, &o->channels) < 0) {
+                fprintf(stderr, "webpulse: bad --channels \"%s\" (e.g. 0-3,6)\n", v);
+                return -1;
+            }
         } else if (IS("-L", "--list-rates")) {
             o->list_rates = 1;
         } else {
@@ -295,8 +303,8 @@ static int run_capture(wp_engine *e, const options *o)
         wp_store_unref(store);
         return 1;
     }
-    rc = csv ? wp_export_csv(store, NULL, 1, wp_write_file, f)
-             : wp_export_vcd(store, NULL, wp_write_file, f);
+    rc = csv ? wp_export_csv(store, NULL, o->channels, 1, wp_write_file, f)
+             : wp_export_vcd(store, NULL, o->channels, wp_write_file, f);
     if (fclose(f) != 0)
         rc = -1;
     if (rc == 0) {
@@ -352,6 +360,7 @@ int main(int argc, char **argv)
 #else
     o.backend = "sim";
 #endif
+    o.channels = WP_ALL_CHANNELS;
     o.listen = "127.0.0.1";
     o.port = 8080;
     o.sim_speed = 1.0;

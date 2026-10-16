@@ -158,6 +158,29 @@ check($('state-detail').textContent.startsWith('2M @ 24 MHz'), `status detail ($
 check(!$('export-vcd').classList.contains('disabled'), 'export enabled');
 check($('export-vcd').href.startsWith('api/export?fmt=vcd&names=CH0%2CCH1'), `export href (${$('export-vcd').href})`);
 
+// Turn CH2 off: slimmer canvas, export without it, last channel cannot be turned off.
+{
+  const rows = $('channels').children;
+  const toggle = (i, on) => {
+    const cb = rows[i].querySelector('.on input');
+    cb.checked = on;
+    cb.dispatch('change');
+  };
+  const h0 = $('wave').height;
+  toggle(2, false);
+  check(rows[2].classList.contains('off') && $('wave').height < h0, `CH2 row collapsed (${h0} -> ${$('wave').height})`);
+  const href = $('export-csv').href;
+  check(href.endsWith('&channels=0,1,3,4,5,6,7'), `export limited to enabled channels (${href})`);
+  const csv = await (await fetch(new URL(href, base) + '&changes=1')).text();
+  check(csv.startsWith('sample,time_ns,CH0,CH1,CH3,CH4,CH5,CH6,CH7\n'), `server CSV columns (${csv.split('\n')[0]})`);
+  const vcd = await (await fetch(new URL($('export-vcd').href, base))).text();
+  check(!vcd.includes(' CH2 ') && vcd.includes('$var wire 1 $ CH3 $end'), 'server VCD omits CH2');
+  for (let i = 0; i < 8; i++) toggle(i, false);
+  check(rows[7].querySelector('.on input').checked, 'last enabled channel stays on');
+  for (let i = 0; i < 8; i++) toggle(i, true);
+  check($('wave').height === h0 && !$('export-csv').href.includes('channels='), 'all channels back on');
+}
+
 await sleep(300);
 check(drawCalls > 500, `waveform drawn in summary mode (${drawCalls} draw calls)`);
 check($('view-info').textContent.includes('smp/px'), `view info (${$('view-info').textContent})`);

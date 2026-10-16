@@ -4,7 +4,7 @@
  *   POST /api/capture  {rate, samples, pre, trigger, timeout_ms}
  *   POST /api/stop
  *   GET  /api/status
- *   GET  /api/export?fmt=vcd|csv[&changes=0|1][&names=a,b,...]
+ *   GET  /api/export?fmt=vcd|csv[&changes=0|1][&names=a,b,...][&channels=0-3,6]
  *
  * WebSocket /ws
  *   client -> server (text): {"type":"query","id":N,"t0":A,"t1":B,"width":W}
@@ -192,7 +192,8 @@ static int api_export(struct mg_connection *conn, wp_server *s,
 {
     const char *qs = ri->query_string ? ri->query_string : "";
     size_t qlen = strlen(qs);
-    char fmt[8] = "vcd", changes[4] = "1", names_buf[512], fname[64];
+    char fmt[8] = "vcd", changes[4] = "1", names_buf[512], chans[40], fname[64];
+    unsigned mask = WP_ALL_CHANNELS;
     char *names[8] = { 0 };
     const char *mime;
     wp_store *store;
@@ -215,6 +216,9 @@ static int api_export(struct mg_connection *conn, wp_server *s,
     }
     if (strcmp(fmt, "vcd") != 0 && strcmp(fmt, "csv") != 0)
         return send_error(conn, 400, "fmt must be vcd or csv");
+    if (mg_get_var(qs, qlen, "channels", chans, sizeof(chans)) >= 0 &&
+        wp_parse_channels(chans, &mask) < 0)
+        return send_error(conn, 400, "channels must be a list such as 0-3,6");
 
     store = wp_engine_store(s->engine);
     if (!store)
@@ -236,9 +240,10 @@ static int api_export(struct mg_connection *conn, wp_server *s,
               "\r\n",
               mime, fname, fmt);
     if (fmt[0] == 'v')
-        wp_export_vcd(store, (const char *const *)names, http_write, &w);
+        wp_export_vcd(store, (const char *const *)names, mask, http_write, &w);
     else
-        wp_export_csv(store, (const char *const *)names, changes[0] != '0', http_write, &w);
+        wp_export_csv(store, (const char *const *)names, mask, changes[0] != '0',
+                      http_write, &w);
     wp_store_unref(store);
     return 200;
 }

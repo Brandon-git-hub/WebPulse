@@ -3,7 +3,7 @@
 // code-server's /proxy/8080/.
 
 import { formatFreq, formatRate, formatSI, formatTime, parseSI } from './format.js';
-import { CHANNELS, RULER_H, ROW_H, Renderer } from './renderer.js';
+import { CHANNELS, OFF_H, RULER_H, ROW_H, Renderer } from './renderer.js';
 import { Viewport } from './viewport.js';
 
 const $ = (id) => document.getElementById(id);
@@ -33,7 +33,7 @@ function saveSettings() {
     samples: $('samples').value,
     pre: $('pre').value,
     timeout: $('timeout').value,
-    channels: channels.map(({ name, color, trig }) => ({ name, color, trig })),
+    channels: channels.map(({ name, color, trig, enabled }) => ({ name, color, trig, enabled })),
   };
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(s));
@@ -47,6 +47,7 @@ const channels = Array.from({ length: CHANNELS }, (_, i) => {
     name: typeof saved.name === 'string' ? saved.name : `CH${i}`,
     color: /^#[0-9a-f]{6}$/i.test(saved.color || '') ? saved.color : DEFAULT_COLORS[i],
     trig: TRIG_OPTIONS.some((o) => o[0] === saved.trig) ? saved.trig : 'X',
+    enabled: saved.enabled !== false,
   };
 });
 
@@ -142,7 +143,8 @@ function buildChannelList() {
     row.style.setProperty('--c', ch.color);
     row.innerHTML = `
       <span class="bar"></span>
-      <span class="idx">${i}</span>
+      <label class="on" title="Show CH${i} and include it in exports">
+        <input type="checkbox"><span class="idx">${i}</span></label>
       <label class="color" title="Channel colour"><input type="color" value="${ch.color}"></label>
       <input class="name" maxlength="24" spellcheck="false" title="Channel name">
       <select class="trig" title="Trigger condition for CH${i}"></select>`;
@@ -176,14 +178,36 @@ function buildChannelList() {
       trig.classList.toggle('active', ch.trig !== 'X');
       saveSettings();
     });
+    const on = row.querySelector('.on input');
+    const applyEnabled = () => {
+      on.checked = ch.enabled;
+      row.classList.toggle('off', !ch.enabled);
+      trig.disabled = !ch.enabled;
+      trig.title = ch.enabled ? `Trigger condition for CH${i}` : `CH${i} is off; its trigger is ignored`;
+    };
+    on.addEventListener('change', () => {
+      if (!on.checked && channels.filter((c) => c.enabled).length === 1) {
+        on.checked = true;
+        toast('At least one channel must stay on', 'info');
+        return;
+      }
+      ch.enabled = on.checked;
+      applyEnabled();
+      renderer.relayout();
+      saveSettings();
+      updateExportLinks();
+    });
+    applyEnabled();
     list.appendChild(row);
   });
   document.documentElement.style.setProperty('--row-h', ROW_H + 'px');
+  document.documentElement.style.setProperty('--row-off-h', OFF_H + 'px');
   document.documentElement.style.setProperty('--ruler-h', RULER_H + 'px');
 }
 
 function triggerSpec() {
-  const s = channels.map((c) => c.trig).join('');
+  // Disabled channels do not take part in the trigger.
+  const s = channels.map((c) => (c.enabled ? c.trig : 'X')).join('');
   return /^X+$/.test(s) ? '' : s;
 }
 
@@ -286,11 +310,14 @@ async function stopCapture() {
 function updateExportLinks() {
   const has = !!vp.capture;
   const names = encodeURIComponent(channels.map((c) => c.name.replace(/,/g, '_')).join(','));
+  const on = channels.flatMap((c, i) => (c.enabled ? [i] : []));
+  const sel = on.length === CHANNELS ? '' : `&channels=${on.join(',')}`;
   for (const fmt of ['vcd', 'csv']) {
     const a = $('export-' + fmt);
     a.classList.toggle('disabled', !has);
-    a.href = has ? `api/export?fmt=${fmt}&names=${names}` : '#';
-    a.title = has ? `Download the capture as ${fmt.toUpperCase()}` : 'No capture';
+    a.href = has ? `api/export?fmt=${fmt}&names=${names}${sel}` : '#';
+    a.title = has ? `Download the capture as ${fmt.toUpperCase()}` +
+      (sel ? ` (CH${on.join(', CH')})` : '') : 'No capture';
   }
 }
 
