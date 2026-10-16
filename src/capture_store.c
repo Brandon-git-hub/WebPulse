@@ -65,6 +65,11 @@ wp_store *wp_store_new(uint8_t *raw, uint64_t n, uint64_t rate, int64_t trigger_
         block *= WP_STORE_FANOUT;
         s->nlevels++;
     }
+    if (n > 0) {
+        uint8_t o, a;
+        wp_store_range(s, 0, n, &o, &a);
+        s->changing = (uint8_t)(o & ~a);
+    }
     return s;
 }
 

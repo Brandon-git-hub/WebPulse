@@ -3,7 +3,7 @@
 // code-server's /proxy/8080/.
 
 import { formatFreq, formatRate, formatSI, formatTime, parseSI } from './format.js';
-import { CHANNELS, OFF_H, RULER_H, ROW_H, Renderer } from './renderer.js';
+import { CHANNELS, RULER_H, ROW_H, Renderer } from './renderer.js';
 import { Viewport } from './viewport.js';
 
 const $ = (id) => document.getElementById(id);
@@ -143,8 +143,7 @@ function buildChannelList() {
     row.style.setProperty('--c', ch.color);
     row.innerHTML = `
       <span class="bar"></span>
-      <label class="on" title="Show CH${i} and include it in exports">
-        <input type="checkbox"><span class="idx">${i}</span></label>
+      <span class="idx">${i}</span>
       <label class="color" title="Channel colour"><input type="color" value="${ch.color}"></label>
       <input class="name" maxlength="24" spellcheck="false" title="Channel name">
       <select class="trig" title="Trigger condition for CH${i}"></select>`;
@@ -155,12 +154,14 @@ function buildChannelList() {
       name.value = ch.name;
       saveSettings();
       updateExportLinks();
+      updateChannelPicker();
     });
     const color = row.querySelector('input[type=color]');
     color.addEventListener('input', () => {
       ch.color = color.value;
       row.style.setProperty('--c', ch.color);
       renderer.requestDraw();
+      updateChannelPicker();
     });
     color.addEventListener('change', saveSettings);
     const trig = row.querySelector('.trig');
@@ -178,31 +179,109 @@ function buildChannelList() {
       trig.classList.toggle('active', ch.trig !== 'X');
       saveSettings();
     });
-    const on = row.querySelector('.on input');
-    const applyEnabled = () => {
-      on.checked = ch.enabled;
-      row.classList.toggle('off', !ch.enabled);
-      trig.disabled = !ch.enabled;
-      trig.title = ch.enabled ? `Trigger condition for CH${i}` : `CH${i} is off; its trigger is ignored`;
-    };
-    on.addEventListener('change', () => {
-      if (!on.checked && channels.filter((c) => c.enabled).length === 1) {
-        on.checked = true;
-        toast('At least one channel must stay on', 'info');
-        return;
-      }
-      ch.enabled = on.checked;
-      applyEnabled();
-      renderer.relayout();
-      saveSettings();
-      updateExportLinks();
-    });
-    applyEnabled();
+    ch.row = row;
+    row.hidden = !ch.enabled;
     list.appendChild(row);
   });
   document.documentElement.style.setProperty('--row-h', ROW_H + 'px');
-  document.documentElement.style.setProperty('--row-off-h', OFF_H + 'px');
   document.documentElement.style.setProperty('--ruler-h', RULER_H + 'px');
+}
+
+// ---- channel picker (toolbar popover) ------------------------------------------------
+
+const isNamed = (ch, i) => ch.name !== `CH${i}`;
+
+function changingMask() {
+  const cap = app.status && app.status.capture;
+  return cap && vp.capture ? cap.changing : null;
+}
+
+const CHANNEL_SETS = {
+  all: () => true,
+  changing: (ch, i, m) => ((m >> i) & 1) === 1,
+  steady: (ch, i, m) => ((m >> i) & 1) === 0,
+  named: (ch, i) => isNamed(ch, i),
+  unnamed: (ch, i) => !isNamed(ch, i),
+};
+
+/** Apply a new enabled state for every channel; refuses to hide them all. */
+function setEnabled(want) {
+  if (!want.some(Boolean)) {
+    toast('At least one channel must stay enabled', 'info');
+    updateChannelPicker();
+    return;
+  }
+  let changed = false;
+  channels.forEach((ch, i) => {
+    if (ch.enabled === want[i]) return;
+    ch.enabled = want[i];
+    ch.row.hidden = !ch.enabled;
+    changed = true;
+  });
+  updateChannelPicker();
+  if (!changed) return;
+  renderer.relayout();
+  saveSettings();
+  updateExportLinks();
+}
+
+function buildChannelPicker() {
+  const grid = $('channels-grid');
+  channels.forEach((ch, i) => {
+    const label = document.createElement('label');
+    label.className = 'pop-ch';
+    label.innerHTML = `<input type="checkbox"><span class="sw"></span><span class="nm"></span>`;
+    const cb = label.querySelector('input');
+    cb.addEventListener('change', () => setEnabled(channels.map((c, j) => (j === i ? cb.checked : c.enabled))));
+    ch.pick = label;
+    grid.appendChild(label);
+  });
+  for (const b of $('channels-pop').querySelectorAll('button[data-act]')) {
+    b.addEventListener('click', () => {
+      const on = b.dataset.act === 'enable';
+      const test = CHANNEL_SETS[b.dataset.sel];
+      const m = changingMask();
+      setEnabled(channels.map((c, i) => (test(c, i, m) ? on : c.enabled)));
+    });
+  }
+  const btn = $('channels-btn'), pop = $('channels-pop');
+  btn.addEventListener('click', () => showChannelPicker(pop.hidden));
+  pop.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Escape') return;
+    showChannelPicker(false);
+    btn.focus();
+  });
+  document.addEventListener('pointerdown', (ev) => {
+    if (!pop.hidden && !pop.contains(ev.target) && !btn.contains(ev.target)) showChannelPicker(false);
+  });
+  updateChannelPicker();
+}
+
+function showChannelPicker(open) {
+  $('channels-pop').hidden = !open;
+  $('channels-btn').setAttribute('aria-expanded', String(open));
+  if (open) updateChannelPicker();
+}
+
+function updateChannelPicker() {
+  const m = changingMask();
+  channels.forEach((ch, i) => {
+    const label = ch.pick;
+    if (!label) return;
+    label.querySelector('input').checked = ch.enabled;
+    label.style.setProperty('--c', ch.color);
+    const changes = m == null ? '' : (m >> i) & 1 ? ' · changing' : ' · no change';
+    label.querySelector('.nm').textContent = isNamed(ch, i) ? `${i} ${ch.name}` : ch.name;
+    label.title = `CH${i}${isNamed(ch, i) ? ' "' + ch.name + '"' : ''}${changes}`;
+    label.classList.toggle('steady', m != null && !((m >> i) & 1));
+  });
+  for (const b of $('channels-pop').querySelectorAll('button[data-act]')) {
+    const needsCap = b.dataset.sel === 'changing' || b.dataset.sel === 'steady';
+    b.disabled = needsCap && m == null;
+    b.title = b.disabled ? 'Needs a completed capture' : '';
+  }
+  const n = channels.filter((c) => c.enabled).length;
+  $('channels-count').textContent = n === CHANNELS ? '' : `${n}/${CHANNELS}`;
 }
 
 function triggerSpec() {
@@ -374,6 +453,7 @@ function onStatus(st) {
       busy ? 'Capturing…' :
       st.state === 'error' ? 'Capture failed' : 'No capture';
   }
+  if (!$('channels-pop').hidden) updateChannelPicker();
 }
 
 function showDevice(d) {
@@ -389,6 +469,7 @@ function showCapture(cap) {
   renderer.cursors = { a: null, b: null };
   $('empty').hidden = true;
   vp.setCapture({ n: cap.n, rate: cap.rate, trigger_pos: cap.trigger_pos });
+  updateChannelPicker();
   updateExportLinks();
 }
 
@@ -549,6 +630,10 @@ document.addEventListener('keydown', (ev) => {
       if (renderer.hoverX != null) setCursor(ev.key.toLowerCase(), renderer.hoverX);
       break;
     case 'Escape':
+      if (!$('channels-pop').hidden) {
+        showChannelPicker(false);
+        break;
+      }
       renderer.cursors = { a: null, b: null };
       renderer.requestDraw();
       updateCursorReadout();
@@ -598,6 +683,7 @@ function updateViewInfo() {
 
 async function init() {
   buildChannelList();
+  buildChannelPicker();
   for (const id of ['samples', 'pre', 'timeout']) {
     if (settings[id] != null) $(id).value = settings[id];
   }

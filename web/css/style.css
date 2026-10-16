@@ -218,24 +218,13 @@ button.primary:hover:not(:disabled) { filter: brightness(1.1); border-color: var
   align-self: stretch;
   background: var(--c);
 }
-.ch .on {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  cursor: pointer;
-}
-.ch .on input { margin: 0; accent-color: var(--c); cursor: pointer; }
 .ch .idx {
-  width: 12px;
+  width: 26px;
   text-align: right;
   color: var(--muted);
   font: 11px var(--mono);
 }
-/* Disabled channel: slim row, matching OFF_H on the canvas. */
-.ch.off { height: var(--row-off-h); }
-.ch.off .bar { opacity: 0.25; }
-.ch.off .name { color: var(--muted); font-size: 12px; padding-top: 0; padding-bottom: 0; }
-.ch.off .color, .ch.off .trig { visibility: hidden; }
+
 .ch .color {
   position: relative;
   width: 14px;
@@ -287,6 +276,61 @@ button.primary:hover:not(:disabled) { filter: brightness(1.1); border-color: var
 
 /* Classes below set display:, which would otherwise override [hidden]. */
 [hidden] { display: none !important; }
+
+/* ---- channel picker ------------------------------------------------------- */
+
+.popover-anchor { position: relative; }
+.count { font: 500 11px var(--mono); color: var(--warn); }
+.popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pop-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(110px, 1fr));
+  gap: 4px 10px;
+}
+.pop-ch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.pop-ch:hover { background: var(--panel-2); }
+.pop-ch input { margin: 0; accent-color: var(--c); cursor: pointer; }
+.pop-ch .sw { width: 10px; height: 10px; border-radius: 2px; background: var(--c); flex: 0 0 auto; }
+.pop-ch .nm { overflow: hidden; text-overflow: ellipsis; font: 12px var(--mono); }
+.pop-ch.steady .nm { color: var(--muted); }
+.pop-actions {
+  display: grid;
+  grid-template-columns: auto repeat(5, auto);
+  gap: 6px;
+  align-items: center;
+}
+.pop-actions span { color: var(--muted); font-size: 12px; padding-right: 4px; }
+.pop-actions button { padding: 3px 10px; font-weight: 500; font-size: 12px; justify-content: center; }
+.pop-note { margin: 0; color: var(--muted); font-size: 11px; }
+@media (max-width: 640px) {
+  .pop-grid { grid-template-columns: repeat(2, minmax(110px, 1fr)); }
+  .pop-actions { display: flex; flex-wrap: wrap; }
+  .pop-actions span { flex-basis: 100%; }
+}
 
 .empty {
   position: absolute;

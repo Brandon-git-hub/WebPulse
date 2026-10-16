@@ -61,6 +61,19 @@ class FakeElement {
     for (const fn of this.handlers[type] || []) fn(e);
   }
   querySelector(sel) { return (this._q[sel] ||= new FakeElement(sel === '.trig' ? 'select' : 'input')); }
+  querySelectorAll(sel) {
+    // Only the channel picker uses this: its Enable/Disable buttons.
+    if (this.id !== 'channels-pop') return [];
+    return (this._all ||= ['enable', 'disable'].flatMap((act) =>
+      ['all', 'changing', 'steady', 'named', 'unnamed'].map((s) => {
+        const b = new FakeElement('button');
+        b.dataset = { act, sel: s };
+        return b;
+      })));
+  }
+  contains(el) { return el === this; }
+  setAttribute(k, v) { this[k] = v; }
+  focus() {}
   getBoundingClientRect() { return { left: 0, top: 0, width: 1200, height: 400 }; }
   setPointerCapture() {}
   releasePointerCapture() {}
@@ -78,6 +91,7 @@ const document = {
 };
 // Input defaults from index.html
 document.getElementById('samples').value = '2M';
+document.getElementById('channels-pop').hidden = true;
 document.getElementById('pre').value = '25';
 document.getElementById('timeout').value = '5';
 document.getElementById('empty').querySelector = () => new FakeElement('p');
@@ -158,27 +172,53 @@ check($('state-detail').textContent.startsWith('2M @ 24 MHz'), `status detail ($
 check(!$('export-vcd').classList.contains('disabled'), 'export enabled');
 check($('export-vcd').href.startsWith('api/export?fmt=vcd&names=CH0%2CCH1'), `export href (${$('export-vcd').href})`);
 
-// Turn CH2 off: slimmer canvas, export without it, last channel cannot be turned off.
+// Channel picker: hide CH2, bulk enable/disable, export only what is shown.
 {
   const rows = $('channels').children;
-  const toggle = (i, on) => {
-    const cb = rows[i].querySelector('.on input');
+  const picks = $('channels-grid').children;
+  const btn = (act, sel) => $('channels-pop').querySelectorAll('button').find((b) => b.dataset.act === act && b.dataset.sel === sel);
+  const pick = (i, on) => {
+    const cb = picks[i].querySelector('input');
     cb.checked = on;
     cb.dispatch('change');
   };
+  const enabled = () => [...rows].map((r) => (r.hidden ? 0 : 1)).join('');
+  $('channels-btn').dispatch('click');
+  check(!$('channels-pop').hidden, 'channel picker opens');
+  check(!btn('enable', 'changing').disabled, 'changing filter available after a capture');
   const h0 = $('wave').height;
-  toggle(2, false);
-  check(rows[2].classList.contains('off') && $('wave').height < h0, `CH2 row collapsed (${h0} -> ${$('wave').height})`);
+  pick(2, false);
+  check(rows[2].hidden && $('wave').height < h0 && $('channels-count').textContent === '7/8',
+        `CH2 hidden (${h0} -> ${$('wave').height}, ${$('channels-count').textContent})`);
   const href = $('export-csv').href;
   check(href.endsWith('&channels=0,1,3,4,5,6,7'), `export limited to enabled channels (${href})`);
   const csv = await (await fetch(new URL(href, base) + '&changes=1')).text();
   check(csv.startsWith('sample,time_ns,CH0,CH1,CH3,CH4,CH5,CH6,CH7\n'), `server CSV columns (${csv.split('\n')[0]})`);
   const vcd = await (await fetch(new URL($('export-vcd').href, base))).text();
   check(!vcd.includes(' CH2 ') && vcd.includes('$var wire 1 $ CH3 $end'), 'server VCD omits CH2');
-  for (let i = 0; i < 8; i++) toggle(i, false);
-  check(rows[7].querySelector('.on input').checked, 'last enabled channel stays on');
-  for (let i = 0; i < 8; i++) toggle(i, true);
-  check($('wave').height === h0 && !$('export-csv').href.includes('channels='), 'all channels back on');
+
+  btn('disable', 'all').dispatch('click');
+  check(enabled() === '11011111', `disable all refused (${enabled()})`);
+  btn('enable', 'all').dispatch('click');
+  check(enabled() === '11111111' && $('wave').height === h0 && !$('export-csv').href.includes('channels='), 'enable all');
+  // The 2M capture at 24 MHz covers ~83 ms: every simulated channel toggles.
+  btn('disable', 'steady').dispatch('click');
+  check(enabled() === '11111111', `non-changing disabled (${enabled()})`);
+  // All names are still the defaults, so every channel counts as unnamed.
+  btn('disable', 'unnamed').dispatch('click');
+  check(enabled() === '11111111', 'disable unnamed refused when all are unnamed');
+  rows[5].querySelector('.name').value = 'pwm';
+  rows[5].querySelector('.name').dispatch('change');
+  btn('disable', 'unnamed').dispatch('click');
+  check(enabled() === '00000100', `only the named channel left (${enabled()})`);
+  btn('disable', 'named').dispatch('click');
+  check(enabled() === '00000100', 'cannot disable the last one');
+  btn('enable', 'unnamed').dispatch('click');
+  check(enabled() === '11111111', 'enable unnamed');
+  rows[5].querySelector('.name').value = '';
+  rows[5].querySelector('.name').dispatch('change');
+  $('channels-btn').dispatch('click');
+  check($('channels-pop').hidden, 'channel picker closes');
 }
 
 await sleep(300);

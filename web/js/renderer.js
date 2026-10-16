@@ -1,7 +1,7 @@
 // Canvas 2D waveform renderer.
 //
-// Layout (css px): a ruler of RULER_H at the top, then one row per channel:
-// ROW_H when the channel is enabled, OFF_H (no waveform) when it is not. Data comes from the server as either raw samples or per-pixel
+// Layout (css px): a ruler of RULER_H at the top, then one row of ROW_H per
+// enabled channel; disabled channels take no space. Data comes from the server as either raw samples or per-pixel
 // summaries (see server.c); both are mapped into the current viewport so a
 // slightly stale response still lines up while the user pans or zooms.
 
@@ -9,13 +9,11 @@ import { niceStep, tickLabel } from './format.js';
 
 export const RULER_H = 30;
 export const ROW_H = 44;
-export const OFF_H = 22;
 export const CHANNELS = 8;
 
 const COLORS = {
   bg: '#0f1216',
   rowAlt: '#12161b',
-  rowOff: '#0b0d10',
   ruler: '#161a20',
   grid: '#1f252d',
   gridStrong: '#2a313b',
@@ -47,7 +45,7 @@ export class Renderer {
   layout() {
     let y = RULER_H;
     this.rows = this.channels.map((ch) => {
-      const h = ch.enabled ? ROW_H : OFF_H;
+      const h = ch.enabled ? ROW_H : 0;
       const r = { top: y, h };
       y += h;
       return r;
@@ -103,12 +101,11 @@ export class Renderer {
     ctx.fillStyle = COLORS.bg;
     ctx.fillRect(0, 0, W, H);
 
-    for (let c = 0; c < CHANNELS; c++) {
+    // Alternate shading by visible row so it stays striped with rows hidden.
+    for (let c = 0, vis = 0; c < CHANNELS; c++) {
       const { top, h } = this.rows[c];
-      if (!this.channels[c].enabled) {
-        ctx.fillStyle = COLORS.rowOff;
-        ctx.fillRect(0, top, W, h);
-      } else if (c % 2) {
+      if (!h) continue;
+      if (vis++ % 2) {
         ctx.fillStyle = COLORS.rowAlt;
         ctx.fillRect(0, top, W, h);
       }

@@ -16,6 +16,35 @@
     </div>
 
     <div class="group">
+      <div class="popover-anchor">
+        <button id="channels-btn" aria-haspopup="true" aria-expanded="false"
+                title="Choose which channels are shown, triggered on and exported">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 3h3V1h4v2h7v2H8v2H4V5H1zm0 8h7V9h4v2h3v2h-3v2H8v-2H1z"/></svg>
+          Channels <span id="channels-count" class="count"></span>
+        </button>
+        <div id="channels-pop" class="popover" hidden role="dialog" aria-label="Channels">
+          <div class="pop-grid" id="channels-grid"></div>
+          <div class="pop-actions">
+            <span>Enable</span>
+            <button data-act="enable" data-sel="all">All</button>
+            <button data-act="enable" data-sel="changing">Changing</button>
+            <button data-act="enable" data-sel="steady">Non-changing</button>
+            <button data-act="enable" data-sel="named">Named</button>
+            <button data-act="enable" data-sel="unnamed">Unnamed</button>
+            <span>Disable</span>
+            <button data-act="disable" data-sel="all">All</button>
+            <button data-act="disable" data-sel="changing">Changing</button>
+            <button data-act="disable" data-sel="steady">Non-changing</button>
+            <button data-act="disable" data-sel="named">Named</button>
+            <button data-act="disable" data-sel="unnamed">Unnamed</button>
+          </div>
+          <p class="pop-note">Hidden channels are ignored by the trigger and left out of exports.
+            All 8 are still captured.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
       <label class="field">
         <span>Rate</span>
         <select id="rate"></select>

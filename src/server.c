@@ -112,9 +112,9 @@ static size_t status_json(wp_server *s, char *out, size_t len)
     store = wp_engine_store(s->engine);
     if (store) {
         n += (size_t)snprintf(out + n, len - n,
-            "{\"n\":%llu,\"rate\":%llu,\"trigger_pos\":%lld}}",
+            "{\"n\":%llu,\"rate\":%llu,\"trigger_pos\":%lld,\"changing\":%u}}",
             (unsigned long long)store->n, (unsigned long long)store->rate,
-            (long long)store->trigger_pos);
+            (long long)store->trigger_pos, (unsigned)store->changing);
         wp_store_unref(store);
     } else {
         n += (size_t)snprintf(out + n, len - n, "null}");

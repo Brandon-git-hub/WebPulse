@@ -58,9 +58,11 @@ CH*i*: `X` don't care, `0`/`1` level, `R` rising, `F` falling, `E` either edge.
 All conditions must be true at once (AND). `--channels 0-3,6` limits the output
 file to those channels. Run `webpulse --help` for every option.
 
-In the UI, the checkbox next to each channel turns it off: its row shrinks, its
-trigger condition is ignored and it is left out of VCD/CSV exports (all 8
-channels are still captured). Mouse wheel zooms, dragging pans, a click places cursor A and
+In the UI, the **Channels** button opens a picker like PulseView's: tick channels
+one by one, or enable / disable *All*, *Changing*, *Non-changing* (whether the
+channel toggles in the current capture), *Named* or *Unnamed* (renamed from the
+default `CHn` or not). Hidden channels are ignored by the trigger and left out
+of VCD/CSV exports; all 8 are still captured. Mouse wheel zooms, dragging pans, a click places cursor A and
 Shift+click places cursor B. Keys: `F` fit, `T` jump to the trigger, `R` run,
 `S` stop, `Esc` clear the cursors.
 
@@ -88,7 +90,7 @@ RAM, which takes about 1–2 s.
 | GET | `/api/device` | backend, model, firmware, supported rates, max samples |
 | POST | `/api/capture` | `{"rate":24000000,"samples":10000000,"pre":0.1,"trigger":"XXXXXXXR","timeout_ms":0}` |
 | POST | `/api/stop` | stop; samples captured after the trigger are kept |
-| GET | `/api/status` | `idle / armed / capturing / processing / done / error`, progress |
+| GET | `/api/status` | `idle / armed / capturing / processing / done / error`, progress; `capture.changing` = mask of channels that toggle |
 | GET | `/api/export?fmt=vcd\|csv[&names=a,b,…][&channels=0-3,6][&changes=0]` | download the capture (`channels`: which channels to include, default all) |
 
 WebSocket `/ws`. The server pushes `{"type":"status",…}` whenever the state

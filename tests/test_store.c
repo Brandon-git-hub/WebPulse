@@ -27,6 +27,15 @@ int main(void)
     CHECK(s != NULL);
     CHECK(s->nlevels >= 4);
     CHECK_EQ_U(s->trigger_pos, 1234);
+    {
+        uint8_t o = 0, a = 0xff;
+        for (i = 0; i < N; i++) {
+            o |= copy[i];
+            a &= copy[i];
+        }
+        CHECK_EQ_U(s->changing, (uint8_t)(o & ~a));
+        CHECK(s->changing != 0);
+    }
 
     /* wp_store_range == brute force */
     for (round = 0; round < 2000; round++) {
