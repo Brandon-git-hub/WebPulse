@@ -114,6 +114,64 @@ Behind code-server, run the daemon in the container and open
 `https://<code-server>/proxy/9002/`. The UI uses only relative URLs, so it
 works under that path prefix.
 
+## Protocol decoders
+
+**Decoders** in the toolbar adds a decoder below the channels: UART, SPI, I²C,
+Parallel (a bus value from up to 8 lines, optionally clocked) and Counter
+(numbers the edges of a line). Each one has its channel assignment and
+options; click its row label to change them. Hover an annotation to see it in
+full in the status bar. Decoders run in the browser on the transitions of the
+channels they use, so even a 256M-sample capture decodes in about a second.
+
+### Writing your own
+
+A decoder is a JavaScript module in the `decoders/` folder next to the
+executable (or the folder given with `--decoders DIR`). Press **Reload** in the
+Decoders panel after adding or editing one. `decoders/pwm.js` is a short
+example, and the built-in decoders in `web/decoders/` are longer ones.
+
+```js
+export default {
+  id: 'pwm',
+  name: 'PWM',
+  desc: 'Duty cycle of each period',                  // optional
+  channels: [{ id: 'pwm', name: 'PWM' }],              // optional: true for optional lines
+  options: [{ id: 'active', name: 'Active level', default: 'high', values: ['high', 'low'] }],
+  rows: [{ id: 'duty', name: 'Duty' }],                // annotation rows, top to bottom
+
+  *decode(d, o) {                                      // o = the option values
+    let start = yield d.wait({ pwm: 'r' });
+    for (;;) {
+      const mid = yield d.wait({ pwm: 'f' });
+      const end = yield d.wait({ pwm: 'r' });
+      const duty = (100 * (mid - start)) / (end - start);
+      d.put(start, end, 'duty', [`${duty.toFixed(1)} %`, `${Math.round(duty)}`]);
+      start = end;
+    }
+  },
+};
+```
+
+`decode` is a generator. It asks for the next sample of interest with
+`yield d.wait(cond)` and gets that sample number back; when nothing matches
+before the end of the capture, decoding stops (code in a `finally` block still
+runs, for example to close an annotation that lasts until the end).
+
+| | |
+|---|---|
+| `{ rx: 'f' }` | a condition per channel: `'r'` rising, `'f'` falling, `'e'` either edge, `'h'` high, `'l'` low; all must hold |
+| `[{ clk: 'r' }, { cs: 'e' }]` | one of several; `d.matched[i]` tells which held |
+| `{ skip: n }` / `d.until(s)` | n samples later (may be fractional) / at sample s |
+| `d.pins.rx` | 0 or 1 at the current sample |
+| `d.samplenum`, `d.rate`, `d.n` | current sample, sample rate in Hz, samples in the capture |
+| `d.has('cs')` | whether an optional channel is assigned |
+| `d.put(start, end, row, texts)` | an annotation; `texts` is a string or an array from longest to shortest, the longest that fits is shown |
+| `d.hex(v, bits)`, `d.bin`, `d.dec`, `d.oct`, `d.ascii(v)`, `d.format(v, bits, 'hex')` | text helpers |
+
+Waiting always moves forward: a condition that holds at the current sample
+does not count. Errors thrown by a decoder are shown in its row; annotations
+made before the error are kept.
+
 ## Windows setup (first time)
 
 0. Windows SmartScreen may warn that the app is unrecognised, because
@@ -165,6 +223,8 @@ the board after uploading the firmware.
 | POST | `/api/stop` | stop; samples captured after the trigger are kept |
 | GET | `/api/status` | `idle / armed / capturing / processing / done / error`, progress; `capture.changing` = mask of channels that toggle |
 | GET | `/api/export?fmt=vcd\|csv[&names=a,b,…][&channels=0-3,6][&changes=0]` | download the capture (`channels`: which channels to include, default all) |
+| GET | `/api/transitions?mask=M[&from=S]` | binary list of the samples where the channels in mask `M` change (used by the decoders; see `api_transitions` in `src/server.c`) |
+| GET | `/api/decoders`, `/api/decoders/NAME.js` | the user decoder files in `--decoders DIR` |
 
 WebSocket `/ws`. The server pushes `{"type":"status",…}` whenever the state
 changes. The client sends `{"type":"query","id":1,"t0":0,"t1":1000000,"width":1200}`
@@ -186,6 +246,8 @@ through the summary pyramid, so it is fast on any capture length.
 
 - `ctest` runs the C unit tests: trigger, mipmap store, fx2 protocol
   encoding, JSON, the capture engine with the simulator, and VCD/CSV export.
+- `tests/decoders_test.mjs` checks the decoder runtime and the built-in
+  decoders on generated waveforms (run by `ctest` when Node.js is found).
 - `tests/web_smoke.mjs` runs the real `web/js/app.js` under Node 22+ with a
   fake DOM against a live server, and drives it like a user would:
 
@@ -198,7 +260,9 @@ through the summary pyramid, so it is fast on any capture length.
 
 ```
 src/        daemon (C11): capture engine, trigger, store, backends, server
-web/        UI (plain ES modules, no build step), embedded at build time
+web/        UI (plain ES modules, no build step), embedded at build time;
+            web/decoders/ built-in protocol decoders, web/js/decode/ their runtime
+decoders/   example user decoder, copied next to the executable
 tests/      unit tests and the web smoke test
 tools/      embed_web.py (web/ -> web_assets.c)
 cmake/      Windows cross toolchain

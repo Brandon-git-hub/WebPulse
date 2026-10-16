@@ -23,6 +23,7 @@ const ctxProxy = new Proxy({}, {
     if (prop in target) return target[prop];
     return (...args) => {
       if (prop === 'lineTo' || prop === 'fillRect') drawCalls++;
+      if (prop === 'measureText') return { width: 7 * String(args[0]).length };
       return undefined;
     };
   },
@@ -38,7 +39,7 @@ class FakeElement {
     this.children = [];
     this.handlers = {};
     this.value = '';
-    this.textContent = '';
+    this._text = '';
     this.hidden = false;
     this.disabled = false;
     this.className = '';
@@ -54,6 +55,9 @@ class FakeElement {
     };
     this.parentElement = { clientWidth: 1200 };
   }
+  // Like the DOM: setting textContent replaces the children.
+  get textContent() { return this._text; }
+  set textContent(v) { this._text = String(v); this.children = []; }
   appendChild(c) {
     // Like the DOM: appending a node that is already a child moves it.
     const k = this.children.indexOf(c);
@@ -92,13 +96,19 @@ const elements = {};
 const document = {
   documentElement: new FakeElement('html'),
   getElementById(id) { return (elements[id] ||= new FakeElement(id === 'wave' ? 'canvas' : 'div', id)); },
-  createElement(tag) { return new FakeElement(tag); },
+  createElement(tag) {
+    const el = new FakeElement(tag);
+    if (tag === 'template') el.content = new FakeElement('fragment');
+    return el;
+  },
   handlers: {},
   addEventListener(type, fn) { (this.handlers[type] ||= []).push(fn); },
 };
 // Input defaults from index.html
 document.getElementById('samples').value = '2M';
 document.getElementById('channels-pop').hidden = true;
+document.getElementById('decoders-pop').hidden = true;
+document.getElementById('dec-editor').hidden = true;
 document.getElementById('pre').value = '25';
 document.getElementById('timeout').value = '5';
 document.getElementById('empty').querySelector = () => new FakeElement('p');
@@ -376,6 +386,45 @@ check($('cur-a').textContent === '–', 'cursors cleared on new capture');
 const saved = JSON.parse(store['webpulse.settings.v1'] || '{}');
 check(saved.samples === '500k' && saved.channels && saved.channels.length === 8, 'settings saved to localStorage');
 check($('run').dataset.mode === 'run' && !$('run').disabled, 'Run button back to Run after the capture');
+
+// Protocol decoders: add UART (RX defaults to CH0, the simulator's UART line)
+{
+  await waitFor(() => $('dec-add-sel').children.length > 0, 5000, 'decoder menu');
+  const builtin = $('dec-add-sel').children[0].children.map((o) => o.value).join(',');
+  check(builtin === 'builtin:uart,builtin:spi,builtin:i2c,builtin:parallel,builtin:counter', `built-in decoders (${builtin})`);
+  // The example next to the executable is listed (Node cannot import it over
+  // HTTP, so here it shows up as unavailable).
+  const user = ($('dec-add-sel').children[1] || { children: [] }).children.map((o) => o.value).join(',');
+  check(user === 'user:pwm.js', `user decoders listed (${user})`);
+  $('dec-add-sel').value = 'builtin:uart';
+  $('dec-add').dispatch('click');
+  await waitFor(() => $('dec-labels').children.length === 2 && !/decoding/.test($('dec-labels').children[0].title),
+    10000, 'UART decode');
+  check($('dec-labels').children.map((e) => e.querySelector('.txt').textContent).join('|') === 'UART · Data|UART · Errors',
+    'decoder rows listed');
+  check($('decoders-count').textContent === '1', 'decoder count on the button');
+  // Hover the data row (below 8 channel rows) where the line sends its message
+  // (x = 560 is sample ~233k, inside a burst): a hex byte + ASCII.
+  $('wave').dispatch('pointermove', { clientX: 560, clientY: 30 + 8 * 44 + 13 });
+  const ann = ($('measure')._html || '').replace(/<[^>]+>/g, ' ').replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ').trim();
+  check(/^UART · Data [0-9A-F]{2} '.+' \d/.test(ann), `annotation under the pointer (${ann})`);
+  const saved = JSON.parse(store['webpulse.settings.v1']).decoders;
+  check(saved.length === 1 && saved[0].key === 'builtin:uart' && saved[0].assign.rx === 0, 'decoder saved');
+
+  // Edit: 9600 baud no longer matches the 115200 baud line, so no "Hello".
+  $('dec-labels').children[0].dispatch('click');
+  const form = $('dec-editor');
+  check(!form.hidden && !$('decoders-pop').hidden, 'editor opens from the row label');
+  form.querySelector('[data-opt="baud"]').value = '9600';
+  form.onsubmit({ preventDefault() {} });
+  await waitFor(() => !/decoding/.test($('dec-labels').children[0].title), 10000, 're-decode');
+  check(JSON.parse(store['webpulse.settings.v1']).decoders[0].options.baud === 9600, 'option saved as a number');
+  form.querySelector('.btns .del').dispatch('click');
+  check($('dec-labels').children.length === 0 && $('decoders-count').textContent === '', 'decoder removed');
+  $('decoders-btn').dispatch('click');
+  $('decoders-btn').dispatch('click');
+}
 
 // Channel order: Alt+Down in a name box, dragging a grip, Reset order
 {

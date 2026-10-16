@@ -67,6 +67,8 @@ size_t wp_store_query_max(uint32_t width);
  * Both return -1 if there is none. Uses the mipmap to skip constant blocks.
  */
 int64_t wp_store_next_edge(const wp_store *s, int ch, uint64_t from);
+/* Smallest i > from where any channel in mask differs from sample from; -1 if none. */
+int64_t wp_store_next_change(const wp_store *s, uint8_t mask, uint64_t from);
 int64_t wp_store_prev_edge(const wp_store *s, int ch, uint64_t from);
 
 #endif

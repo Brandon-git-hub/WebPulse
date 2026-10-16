@@ -92,6 +92,23 @@ int main(void)
             CHECK(v == exp);
         }
     }
+    /* Change search over several channels == brute force */
+    for (round = 0; round < 2000; round++) {
+        uint8_t mask;
+        uint64_t from;
+        int64_t want = -1, j;
+        seed = seed * 1103515245u + 12345u;
+        mask = (uint8_t)((seed >> 8) & 0xff);
+        seed = seed * 1103515245u + 12345u;
+        from = (seed >> 4) % N;
+        for (j = (int64_t)from + 1; mask && j < (int64_t)N; j++)
+            if ((copy[j] ^ copy[from]) & mask) {
+                want = j;
+                break;
+            }
+        CHECK_EQ_U(wp_store_next_change(s, mask, from), want);
+    }
+
     /* Edge search == brute force, including from at / next to an edge */
     for (round = 0; round < 3000; round++) {
         int ch;

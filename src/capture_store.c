@@ -138,32 +138,43 @@ static int block_differs(const wp_store *s, int k, uint64_t idx, uint8_t bit, in
     return L ? !(p[1] & bit) : (p[0] & bit) != 0;
 }
 
-int64_t wp_store_next_edge(const wp_store *s, int ch, uint64_t from)
+/* Is every sample of block idx of level k equal to v on the mask bits? */
+static int block_equals(const wp_store *s, int k, uint64_t idx, uint8_t mask, uint8_t v)
 {
-    const uint8_t bit = (uint8_t)(1u << ch);
-    uint64_t pos;
-    int L;
+    const uint8_t *p = s->lv[k].d + 2 * idx;
+    return (p[0] & mask) == (v & mask) && (p[1] & mask) == (v & mask);
+}
 
-    if (from + 1 >= s->n)
+int64_t wp_store_next_change(const wp_store *s, uint8_t mask, uint64_t from)
+{
+    uint8_t v;
+    uint64_t pos;
+
+    if (from + 1 >= s->n || !mask)
         return -1;
-    L = (s->raw[from] & bit) != 0;
+    v = s->raw[from];
     pos = from + 1;
     while (pos < s->n) {
         int k = s->nlevels - 1;
         /* Largest block starting at pos, then descend while it has a change. */
         while (k >= 0 && pos % s->lv[k].block)
             k--;
-        while (k >= 0 && block_differs(s, k, pos / s->lv[k].block, bit, L))
+        while (k >= 0 && !block_equals(s, k, pos / s->lv[k].block, mask, v))
             k--;
         if (k >= 0) {
-            pos += s->lv[k].block;      /* whole block is still at level L */
+            pos += s->lv[k].block;      /* whole block is unchanged */
             continue;
         }
-        if (((s->raw[pos] & bit) != 0) != L)
+        if ((s->raw[pos] ^ v) & mask)
             return (int64_t)pos;
         pos++;
     }
     return -1;
+}
+
+int64_t wp_store_next_edge(const wp_store *s, int ch, uint64_t from)
+{
+    return wp_store_next_change(s, (uint8_t)(1u << ch), from);
 }
 
 int64_t wp_store_prev_edge(const wp_store *s, int ch, uint64_t from)

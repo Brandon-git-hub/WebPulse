@@ -57,6 +57,26 @@
     </div>
 
     <div class="group">
+      <div class="popover-anchor">
+        <button id="decoders-btn" aria-haspopup="true" aria-expanded="false"
+                title="Protocol decoders (UART, SPI, I²C, …) shown below the channels">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 4h4l1.5-2h3L11 4h4v2h-3.5L10 8H6L4.5 6H1zm0 6h3.5L6 8h4l1.5 2H15v2h-4l-1.5 2h-3L5 12H1z"/></svg>
+          Decoders <span id="decoders-count" class="count"></span>
+        </button>
+        <div id="decoders-pop" class="popover" hidden role="dialog" aria-label="Decoders">
+          <div id="dec-list" class="dec-list"></div>
+          <form id="dec-editor" class="dec-editor" hidden></form>
+          <div class="dec-add">
+            <select id="dec-add-sel" aria-label="Decoder to add"></select>
+            <button id="dec-add" class="primary">Add</button>
+            <button id="dec-reload" title="Load your decoders from the decoders folder again">Reload</button>
+          </div>
+          <p class="pop-note" id="dec-note"></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
       <label class="field">
         <span>Rate</span>
         <select id="rate"></select>
@@ -127,6 +147,7 @@
         <span>Channel</span>
         <span title="Trigger condition">Trig</span>
       </div>
+      <div id="dec-labels"></div>
     </aside>
     <section class="wave" id="wave-wrap">
       <canvas id="wave"></canvas>

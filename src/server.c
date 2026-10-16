@@ -5,6 +5,10 @@
  *   POST /api/stop
  *   GET  /api/status
  *   GET  /api/export?fmt=vcd|csv[&changes=0|1][&names=a,b,...][&channels=0-3,6]
+ *   GET  /api/transitions?mask=M[&from=S][&limit=N]   changes of the masked
+ *        channels, binary (see api_transitions); used by the protocol decoders
+ *   GET  /api/decoders                   user decoder files in --decoders DIR
+ *   GET  /api/decoders/NAME.js           one of them
  *
  * WebSocket /ws
  *   client -> server (text): {"type":"query","id":N,"t0":A,"t1":B,"width":W}
@@ -25,6 +29,7 @@
 
 #include "civetweb.h"
 
+#include <dirent.h>
 #include <errno.h>
 #include <pthread.h>
 #include <stdatomic.h>
@@ -55,12 +60,33 @@ struct wp_server {
     struct mg_connection *ws[MAX_WS_CLIENTS];
     int nws;
     int port;
+    char decoders_dir[1024];
 
     pthread_t status_thread;
     atomic_int quit;
 };
 
 /* ---- helpers ---------------------------------------------------------- */
+
+/* Little-endian writers (the wire formats are little endian). */
+static void put_u16(uint8_t *p, uint16_t v)
+{
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)(v >> 8);
+}
+
+static void put_u32(uint8_t *p, uint32_t v)
+{
+    put_u16(p, (uint16_t)v);
+    put_u16(p + 2, (uint16_t)(v >> 16));
+}
+
+static void put_u64(uint8_t *p, uint64_t v)
+{
+    put_u32(p, (uint32_t)v);
+    put_u32(p + 4, (uint32_t)(v >> 32));
+}
+
 
 static const char *status_text(int code)
 {
@@ -253,6 +279,166 @@ static int api_export(struct mg_connection *conn, wp_server *s,
     return 200;
 }
 
+/*
+ * Changes of the channels in mask, starting at sample from, little endian:
+ *   f64 n (samples in the capture), f64 next (sample to continue from, -1 when
+ *   complete), u32 count, u32 mask, f64 pos[count], u8 value[count]
+ * The first entry is from itself; value is the full sample byte (only the mask
+ * bits are meaningful). Positions are f64 so JavaScript can read them as a
+ * Float64Array directly (exact up to 2^53).
+ */
+#define TRANSITIONS_DEFAULT  (4u << 20)
+#define TRANSITIONS_MAX      (16u << 20)
+
+static int api_transitions(struct mg_connection *conn, wp_server *s,
+                           const struct mg_request_info *ri)
+{
+    const char *qs = ri->query_string ? ri->query_string : "";
+    size_t qlen = strlen(qs), count = 0, limit = TRANSITIONS_DEFAULT, hdr = 24;
+    char v[32];
+    unsigned mask = 0;
+    uint64_t from = 0;
+    int64_t next;
+    wp_store *store;
+    uint8_t *buf;
+    double *pos;
+    double d;
+
+    if (mg_get_var(qs, qlen, "mask", v, sizeof(v)) > 0)
+        mask = (unsigned)strtoul(v, NULL, 0);
+    if (mask == 0 || mask > 0xff)
+        return send_error(conn, 400, "mask must be 1..255");
+    if (mg_get_var(qs, qlen, "from", v, sizeof(v)) > 0)
+        from = strtoull(v, NULL, 10);
+    if (mg_get_var(qs, qlen, "limit", v, sizeof(v)) > 0) {
+        limit = (size_t)strtoul(v, NULL, 10);
+        if (limit < 1 || limit > TRANSITIONS_MAX)
+            limit = TRANSITIONS_DEFAULT;
+    }
+    store = wp_engine_store(s->engine);
+    if (!store)
+        return send_error(conn, 404, "no completed capture");
+    if (from >= store->n) {
+        wp_store_unref(store);
+        return send_error(conn, 400, "from is past the end of the capture");
+    }
+
+    buf = malloc(hdr + limit * 9);
+    if (!buf) {
+        wp_store_unref(store);
+        return send_error(conn, 503, "out of memory");
+    }
+    pos = (double *)(buf + hdr);
+    next = (int64_t)from;
+    while (count < limit && next >= 0) {
+        pos[count] = (double)next;
+        buf[hdr + limit * 8 + count] = store->raw[next];
+        count++;
+        next = wp_store_next_change(store, (uint8_t)mask, (uint64_t)next);
+    }
+    /* Values follow the positions directly. */
+    memmove(buf + hdr + count * 8, buf + hdr + limit * 8, count);
+    /* f64 in host order: every supported target (x86-64) is little endian. */
+    d = (double)store->n;
+    memcpy(buf, &d, 8);
+    d = (double)next;
+    memcpy(buf + 8, &d, 8);
+    put_u32(buf + 16, (uint32_t)count);
+    put_u32(buf + 20, mask);
+    wp_store_unref(store);
+
+    mg_printf(conn,
+              "HTTP/1.1 200 OK\r\n"
+              "Content-Type: application/octet-stream\r\n"
+              "Content-Length: %zu\r\n"
+              "Cache-Control: no-store\r\n"
+              "\r\n",
+              hdr + count * 9);
+    mg_write(conn, buf, hdr + count * 9);
+    free(buf);
+    return 200;
+}
+
+/* A user decoder file name: [A-Za-z0-9_.-]+.js, not starting with a dot. */
+static int decoder_name_ok(const char *n)
+{
+    size_t len = strlen(n), i;
+    if (len < 4 || len > 64 || n[0] == '.' || strcmp(n + len - 3, ".js") != 0)
+        return 0;
+    for (i = 0; i < len; i++) {
+        char c = n[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+              c == '_' || c == '-' || c == '.'))
+            return 0;
+    }
+    return 1;
+}
+
+static int api_decoders(struct mg_connection *conn, wp_server *s, const char *name)
+{
+    char path[1200];
+
+    if (!s->decoders_dir[0])
+        return name ? send_error(conn, 404, "no decoder directory")
+                    : send_json(conn, 200, "{\"dir\":\"\",\"files\":[]}");
+    if (!name) {
+        /* {"dir":"...","files":["a.js",...]} */
+        char body[8192], esc[2100];
+        size_t n;
+        int first = 1;
+        DIR *d = opendir(s->decoders_dir);
+        wp_json_escape(s->decoders_dir, esc, sizeof(esc));
+        n = (size_t)snprintf(body, sizeof(body), "{\"dir\":\"%s\",\"files\":[", esc);
+        if (d) {
+            struct dirent *de;
+            while ((de = readdir(d)) != NULL && n + 80 < sizeof(body)) {
+                if (!decoder_name_ok(de->d_name))
+                    continue;
+                n += (size_t)snprintf(body + n, sizeof(body) - n, "%s\"%s\"",
+                                      first ? "" : ",", de->d_name);
+                first = 0;
+            }
+            closedir(d);
+        }
+        snprintf(body + n, sizeof(body) - n, "]}");
+        return send_json(conn, 200, body);
+    }
+    if (!decoder_name_ok(name))
+        return send_error(conn, 400, "bad decoder file name");
+    snprintf(path, sizeof(path), "%s/%s", s->decoders_dir, name);
+    {
+        FILE *f = fopen(path, "rb");
+        long len;
+        char *data;
+        if (!f)
+            return send_error(conn, 404, "no such decoder");
+        fseek(f, 0, SEEK_END);
+        len = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (len < 0 || len > (4 << 20)) {
+            fclose(f);
+            return send_error(conn, 413, "decoder file too large");
+        }
+        data = malloc((size_t)len + 1);
+        if (!data || fread(data, 1, (size_t)len, f) != (size_t)len) {
+            fclose(f);
+            free(data);
+            return send_error(conn, 500, "cannot read decoder");
+        }
+        fclose(f);
+        mg_printf(conn,
+                  "HTTP/1.1 200 OK\r\n"
+                  "Content-Type: text/javascript; charset=utf-8\r\n"
+                  "Content-Length: %ld\r\n"
+                  "Cache-Control: no-store\r\n"
+                  "\r\n",
+                  len);
+        mg_write(conn, data, (size_t)len);
+        free(data);
+        return 200;
+    }
+}
+
 static int api_handler(struct mg_connection *conn, void *cbdata)
 {
     wp_server *s = cbdata;
@@ -280,6 +466,12 @@ static int api_handler(struct mg_connection *conn, void *cbdata)
     }
     if (strcmp(uri, "/api/export") == 0)
         return is_get ? api_export(conn, s, ri) : send_error(conn, 405, "use GET");
+    if (strcmp(uri, "/api/transitions") == 0)
+        return is_get ? api_transitions(conn, s, ri) : send_error(conn, 405, "use GET");
+    if (strcmp(uri, "/api/decoders") == 0)
+        return is_get ? api_decoders(conn, s, NULL) : send_error(conn, 405, "use GET");
+    if (strncmp(uri, "/api/decoders/", 14) == 0)
+        return is_get ? api_decoders(conn, s, uri + 14) : send_error(conn, 405, "use GET");
     return send_error(conn, 404, "unknown API endpoint");
 }
 
@@ -318,24 +510,6 @@ static int asset_handler(struct mg_connection *conn, void *cbdata)
 }
 
 /* ---- WebSocket ---------------------------------------------------------- */
-
-static void put_u16(uint8_t *p, uint16_t v)
-{
-    p[0] = (uint8_t)v;
-    p[1] = (uint8_t)(v >> 8);
-}
-
-static void put_u32(uint8_t *p, uint32_t v)
-{
-    put_u16(p, (uint16_t)v);
-    put_u16(p + 2, (uint16_t)(v >> 16));
-}
-
-static void put_u64(uint8_t *p, uint64_t v)
-{
-    put_u32(p, (uint32_t)v);
-    put_u32(p + 4, (uint32_t)(v >> 32));
-}
 
 static void ws_send_text(struct mg_connection *conn, const char *text)
 {
@@ -582,6 +756,8 @@ wp_server *wp_server_start(wp_engine *e, const wp_server_opts *o, char *err, siz
     }
     s->engine = e;
     s->version = o->version ? o->version : "";
+    if (o->decoders_dir)
+        wp_strlcpy(s->decoders_dir, o->decoders_dir, sizeof(s->decoders_dir));
     pthread_mutex_init(&s->ws_lock, NULL);
     atomic_init(&s->quit, 0);
 

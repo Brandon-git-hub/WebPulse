@@ -362,6 +362,63 @@ button.primary:hover:not(:disabled) { filter: brightness(1.1); border-color: var
 /* Classes below set display:, which would otherwise override [hidden]. */
 [hidden] { display: none !important; }
 
+/* ---- decoders ------------------------------------------------------------- */
+
+.dec-label {
+  height: var(--dec-row-h);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px 0 0;
+  border-bottom: 1px solid var(--row-line);
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.dec-label:first-child { border-top: 1px solid var(--border); }
+.dec-label .bar { width: 4px; align-self: stretch; background: var(--c); }
+.dec-label .txt { overflow: hidden; text-overflow: ellipsis; }
+.dec-label.err .txt { color: var(--danger); }
+.dec-label:hover { background: var(--panel-2); }
+
+#decoders-pop { width: min(460px, calc(100vw - 32px)); }
+.dec-list { display: flex; flex-direction: column; gap: 4px; }
+.dec-list:empty::before { content: "No decoders yet."; color: var(--muted); font-size: 12px; }
+.dec-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+.dec-item .sw { width: 10px; height: 10px; border-radius: 2px; background: var(--c); margin: 0; }
+.dec-item .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dec-item .info { color: var(--muted); font: 11px var(--mono); white-space: nowrap; }
+.dec-item .info.err { color: var(--danger); white-space: normal; }
+.dec-item button { padding: 2px 8px; font-weight: 500; font-size: 12px; }
+.dec-add { display: flex; gap: 6px; }
+.dec-add select { flex: 1; min-width: 0; }
+.dec-editor {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.dec-editor h4 { grid-column: 1 / -1; margin: 0; font-size: 13px; }
+.dec-editor .desc { grid-column: 1 / -1; margin: -2px 0 2px; color: var(--muted); font-size: 12px; }
+.dec-editor .sec { grid-column: 1 / -1; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; margin-top: 4px; }
+.dec-editor label { color: var(--muted); font-size: 12px; }
+.dec-editor input, .dec-editor select { width: 100%; padding: 3px 6px; }
+.dec-editor .btns { grid-column: 1 / -1; display: flex; gap: 6px; justify-content: flex-end; }
+.dec-editor .btns button { padding: 3px 10px; font-size: 12px; }
+.dec-editor .btns .del { margin-right: auto; }
+
 /* ---- channel picker ------------------------------------------------------- */
 
 .popover-anchor { position: relative; }

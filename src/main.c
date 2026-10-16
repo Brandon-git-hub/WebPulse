@@ -41,6 +41,7 @@ typedef struct {
     int port_set;               /* given with -p: do not fall back to another port */
     const char *web_root;
     const char *firmware;
+    const char *decoders;
     double sim_speed;
     uint64_t max_samples;
 
@@ -68,6 +69,8 @@ static void usage(FILE *f)
         "  -p, --port N             HTTP port (default 9002; if it is taken and -p is\n"
         "                           not given, the next free one up to 9011)\n"
         "  -w, --web-root DIR       serve the UI from DIR instead of the embedded copy\n"
+        "  -d, --decoders DIR       folder with your own protocol decoders (*.js)\n"
+        "                           (default: decoders/ next to the exe)\n"
         "  -f, --firmware PATH      fx2lafw firmware image\n"
         "                           (default: firmware/fx2lafw-saleae-logic.fw next to the exe)\n"
         "      --sim-speed X        simulator speed, 1 = real time, 0 = unlimited (default 1)\n"
@@ -131,6 +134,8 @@ static int parse_args(int argc, char **argv, options *o)
             }
         } else if (IS("-w", "--web-root")) {
             if (need_arg(argc, argv, &i, &o->web_root)) return -1;
+        } else if (IS("-d", "--decoders")) {
+            if (need_arg(argc, argv, &i, &o->decoders)) return -1;
         } else if (IS("-f", "--firmware")) {
             if (need_arg(argc, argv, &i, &o->firmware)) return -1;
         } else if (strcmp(a, "--sim-speed") == 0) {
@@ -180,7 +185,6 @@ static int parse_args(int argc, char **argv, options *o)
     return 0;
 }
 
-#ifdef WP_HAVE_FX2
 /* Directory containing the executable, with trailing separator. */
 static void exe_dir(char *buf, size_t len)
 {
@@ -206,7 +210,6 @@ static void exe_dir(char *buf, size_t len)
 #endif
     buf[n] = '\0';
 }
-#endif
 
 static wp_device *make_device(const options *o, char *fw_path, size_t fw_len)
 {
@@ -326,7 +329,7 @@ static int run_server(wp_engine *e, const options *o)
 {
     wp_server_opts so;
     wp_server *srv;
-    char err[300];
+    char err[300], dec_dir[1024];
 
     memset(&so, 0, sizeof(so));
     so.listen = o->listen;
@@ -334,6 +337,13 @@ static int run_server(wp_engine *e, const options *o)
     so.port_tries = o->port_set ? 1 : 10;   /* default port taken: try 9003..9011 */
     so.web_root = o->web_root;
     so.version = WP_VERSION;
+    if (o->decoders) {
+        wp_strlcpy(dec_dir, o->decoders, sizeof(dec_dir));
+    } else {
+        exe_dir(dec_dir, sizeof(dec_dir));
+        strncat(dec_dir, "decoders", sizeof(dec_dir) - strlen(dec_dir) - 1);
+    }
+    so.decoders_dir = dec_dir;
     srv = wp_server_start(e, &so, err, sizeof(err));
     if (!srv) {
         fprintf(stderr, "webpulse: %s\n", err);

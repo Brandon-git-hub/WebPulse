@@ -3,7 +3,8 @@
 // code-server's /proxy/9002/.
 
 import { formatFreq, formatRate, formatSI, formatTime, parseSI } from './format.js';
-import { CHANNELS, RULER_H, ROW_H, Renderer, loadTheme } from './renderer.js';
+import { CHANNELS, DEC_ROW_H, RULER_H, ROW_H, Renderer, loadTheme } from './renderer.js';
+import { Decoders } from './decoders.js';
 import { Viewport } from './viewport.js';
 
 const $ = (id) => document.getElementById(id);
@@ -49,6 +50,7 @@ function saveSettings() {
     timeout: $('timeout').value,
     channels: channels.map(({ name, custom, trig, enabled }) => ({ name, color: custom, trig, enabled })),
     order,
+    decoders: decoders.serialize(),
   };
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(s));
@@ -413,6 +415,211 @@ function buildChannelList() {
   document.documentElement.style.setProperty('--ruler-h', RULER_H + 'px');
 }
 
+// ---- protocol decoders ------------------------------------------------------------------
+
+const decoders = new Decoders({
+  onUpdate: (structure = true) => syncDecoders(structure),
+  onError: (msg) => toast(msg),
+});
+decoders.restore(settings.decoders);
+
+/** Push the decoder rows to the renderer and the side list. */
+function syncDecoders(structure = true) {
+  const rows = decoders.rows();
+  const sameHeight = rows.length === renderer.decRows.length;
+  renderer.decRows = rows;
+  if (sameHeight) {
+    renderer.layout();
+    renderer.requestDraw();
+  } else {
+    renderer.relayout();
+  }
+  if (!structure) return;     // progress only
+  const box = $('dec-labels');
+  box.textContent = '';
+  for (const r of rows) {
+    const el = document.createElement('div');
+    el.className = 'dec-label' + (r.error && r.status ? ' err' : '');
+    el.style.setProperty('--c', r.color);
+    el.innerHTML = '<span class="bar"></span><span class="txt"></span>';
+    el.querySelector('.txt').textContent = r.label;
+    el.title = r.status || `${r.label} (click to edit)`;
+    el.addEventListener('click', () => {
+      showDecoderPanel(true);
+      editDecoder(r.inst);
+    });
+    box.appendChild(el);
+  }
+  $('decoders-count').textContent = decoders.list.length ? String(decoders.list.length) : '';
+  renderDecoderList();
+}
+
+function chLabel(c) {
+  const ch = channels[c];
+  return ch.name === `CH${c}` ? ch.name : `CH${c} ${ch.name}`;
+}
+
+function buildDecoderPanel() {
+  const btn = $('decoders-btn'), pop = $('decoders-pop');
+  btn.addEventListener('click', () => showDecoderPanel(pop.hidden));
+  document.addEventListener('pointerdown', (ev) => {
+    if (!pop.hidden && !pop.contains(ev.target) && !btn.contains(ev.target)) showDecoderPanel(false);
+  });
+  pop.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Escape') return;
+    showDecoderPanel(false);
+    btn.focus();
+  });
+  $('dec-add').addEventListener('click', () => {
+    const inst = decoders.add($('dec-add-sel').value, order.filter((c) => channels[c].enabled));
+    if (!inst) return;
+    saveSettings();
+    editDecoder(inst);
+  });
+  $('dec-reload').addEventListener('click', () => decoders.loadDefs().then(() => {
+    fillDecoderMenu();
+    toast(`Decoders reloaded (${decoders.defs.filter((d) => d.def).length} available)`, 'info');
+  }));
+}
+
+function showDecoderPanel(open) {
+  $('decoders-pop').hidden = !open;
+  $('decoders-btn').setAttribute('aria-expanded', String(open));
+  if (!open) $('dec-editor').hidden = true;
+  else renderDecoderList();
+}
+
+function fillDecoderMenu() {
+  const sel = $('dec-add-sel');
+  sel.textContent = '';
+  for (const source of ['built-in', 'yours']) {
+    const defs = decoders.defs.filter((d) => d.source === source);
+    if (!defs.length) continue;
+    const g = document.createElement('optgroup');
+    g.label = source === 'built-in' ? 'Built-in' : 'Your decoders';
+    for (const d of defs) {
+      const o = document.createElement('option');
+      o.value = d.key;
+      o.textContent = d.def ? `${d.def.name}${d.def.desc ? ' – ' + d.def.desc : ''}` : `${d.name} (error: ${d.error})`;
+      o.disabled = !d.def;
+      g.appendChild(o);
+    }
+    sel.appendChild(g);
+  }
+  $('dec-note').textContent = decoders.userDir
+    ? `Your own decoders are loaded from ${decoders.userDir} (see README, "Protocol decoders").`
+    : '';
+}
+
+function renderDecoderList() {
+  const list = $('dec-list');
+  list.textContent = '';
+  for (const inst of decoders.list) {
+    const d = decoders.def(inst.key);
+    const st = decoders.state.get(inst.uid) || {};
+    const item = document.createElement('div');
+    item.className = 'dec-item';
+    item.style.setProperty('--c', inst.color);
+    item.innerHTML = '<i class="sw"></i><span class="nm"></span><span class="info"></span>' +
+      '<button type="button" class="edit">Edit</button><button type="button" class="del" title="Remove">✕</button>';
+    item.querySelector('.nm').textContent = inst.label;
+    const info = item.querySelector('.info');
+    if (st.status === 'error') {
+      info.textContent = st.error;
+      info.classList.add('err');
+    } else if (d) {
+      info.textContent = (d.def.channels || []).filter((c) => inst.assign[c.id] != null && inst.assign[c.id] !== '')
+        .map((c) => `${c.name}=CH${inst.assign[c.id]}`).join(' ');
+    }
+    item.querySelector('.edit').addEventListener('click', () => editDecoder(inst));
+    item.querySelector('.del').addEventListener('click', () => {
+      decoders.remove(inst);
+      $('dec-editor').hidden = true;
+      saveSettings();
+    });
+    list.appendChild(item);
+  }
+}
+
+/** Show the settings of one decoder: label, channel assignment, options. */
+function editDecoder(inst) {
+  const d = decoders.def(inst.key);
+  const form = $('dec-editor');
+  form.textContent = '';
+  form.hidden = false;
+  if (!d) {
+    form.innerHTML = '<p class="desc"></p>';
+    form.querySelector('p').textContent = `Decoder ${inst.key} is not available.`;
+    return;
+  }
+  const add = (html) => {
+    const t = document.createElement('template');
+    t.innerHTML = html;
+    form.appendChild(t.content);
+  };
+  const esc = escapeHtml;
+  add(`<h4>${esc(d.def.name)}</h4>` + (d.def.desc ? `<p class="desc">${esc(d.def.desc)}</p>` : ''));
+  add(`<label for="dec-f-label">Label</label><input id="dec-f-label" maxlength="40" value="${esc(inst.label)}">`);
+  add('<div class="sec">Channels</div>');
+  for (const c of d.def.channels) {
+    const opts = (c.optional ? ['<option value="">—</option>'] : [])
+      .concat(channels.map((_, k) => `<option value="${k}">${esc(chLabel(k))}</option>`)).join('');
+    add(`<label for="dec-c-${c.id}" title="${esc(c.desc || '')}">${esc(c.name)}${c.optional ? '' : ' *'}</label>` +
+        `<select id="dec-c-${c.id}" data-ch="${c.id}">${opts}</select>`);
+    form.querySelector(`[data-ch="${c.id}"]`).value = inst.assign[c.id] == null ? '' : String(inst.assign[c.id]);
+  }
+  if ((d.def.options || []).length) add('<div class="sec">Options</div>');
+  for (const o of d.def.options || []) {
+    const cur = inst.options[o.id] ?? o.default;
+    if (Array.isArray(o.values)) {
+      add(`<label for="dec-o-${o.id}">${esc(o.name)}</label><select id="dec-o-${o.id}" data-opt="${o.id}">` +
+          o.values.map((v) => `<option value="${esc(String(v))}">${esc(String(v))}</option>`).join('') + '</select>');
+      form.querySelector(`[data-opt="${o.id}"]`).value = String(cur);
+    } else {
+      add(`<label for="dec-o-${o.id}">${esc(o.name)}</label><input id="dec-o-${o.id}" data-opt="${o.id}" ` +
+          `${typeof o.default === 'number' ? 'type="number" step="any"' : ''} value="${esc(String(cur))}">`);
+    }
+  }
+  add('<div class="btns"><button type="button" class="del">Remove</button>' +
+      '<button type="button" class="cancel">Close</button><button type="submit" class="primary">Apply</button></div>');
+  form.querySelector('.cancel').addEventListener('click', () => { form.hidden = true; });
+  form.querySelector('.btns .del').addEventListener('click', () => {
+    decoders.remove(inst);
+    form.hidden = true;
+    saveSettings();
+  });
+  form.onsubmit = (ev) => {
+    ev.preventDefault();
+    const assign = {}, options = {};
+    for (const c of d.def.channels) {
+      const v = form.querySelector(`[data-ch="${c.id}"]`).value;
+      assign[c.id] = v === '' ? null : Number(v);
+    }
+    for (const o of d.def.options || []) {
+      const v = form.querySelector(`[data-opt="${o.id}"]`).value;
+      // Keep numbers as numbers (the select / input give strings).
+      options[o.id] = typeof o.default === 'number' && v !== '' && !Number.isNaN(Number(v)) ? Number(v) : v;
+    }
+    decoders.update(inst, { label: form.querySelector('#dec-f-label').value.trim() || d.def.name, assign, options });
+    saveSettings();
+  };
+}
+
+/** Status bar text for the annotation under the pointer. */
+function showAnnotation(row, ann) {
+  const el = $('measure');
+  app.annotation = true;
+  if (!ann) {
+    el.hidden = true;
+    return;
+  }
+  const rate = vp.capture.rate;
+  el.innerHTML = `<span class="ch-sw" style="--c:${row.color}"></span>${escapeHtml(row.label)}` +
+    `<span class="k">${escapeHtml(ann.text[0])}</span>` +
+    `<span class="k">${formatTime((ann.end - ann.start) / rate, 4)}</span>`;
+  el.hidden = false;
+}
+
 // ---- channel order ---------------------------------------------------------------------
 
 /** Put the list rows in display order (appendChild moves existing nodes). */
@@ -753,6 +960,7 @@ function onStatus(st) {
     updateMeasureReadout();
     renderer.cursors = { a: null, b: null };
     $('empty').hidden = false;
+    decoders.setCapture(null);
     updateExportLinks();
     updateCursorReadout();
     updateViewInfo();
@@ -784,6 +992,7 @@ function showCapture(cap) {
   vp.setCapture({ n: cap.n, rate: cap.rate, trigger_pos: cap.trigger_pos });
   updateChannelPicker();
   updateExportLinks();
+  decoders.setCapture({ key: app.capKey, rate: cap.rate });
 }
 
 // ---- WebSocket -------------------------------------------------------------------------
@@ -888,8 +1097,17 @@ canvas.addEventListener('pointermove', (ev) => {
   const { x, y } = localX(ev);
   renderer.hoverX = vp.capture ? x : null;
   if (vp.capture) {
-    setActive(renderer.channelAt(y));
-    if (renderer.active != null) measureAt(renderer.active, vp.sampleAt(x));
+    const dec = renderer.decoderAt(y);
+    if (dec) {
+      showAnnotation(dec.row, renderer.annotationAt(dec.row, x));
+    } else {
+      if (app.annotation) {
+        app.annotation = false;
+        updateMeasureReadout();
+      }
+      setActive(renderer.channelAt(y));
+      if (renderer.active != null) measureAt(renderer.active, vp.sampleAt(x));
+    }
   }
   if (drag.active) {
     if (Math.abs(x - drag.x0) > CLICK_PX) drag.moved = true;
@@ -1048,6 +1266,10 @@ document.addEventListener('keydown', (ev) => {
         showChannelPicker(false);
         break;
       }
+      if (!$('decoders-pop').hidden) {
+        showDecoderPanel(false);
+        break;
+      }
       renderer.cursors = { a: null, b: null };
       renderer.requestDraw();
       updateCursorReadout();
@@ -1099,6 +1321,9 @@ function updateViewInfo() {
 async function init() {
   buildChannelList();
   buildChannelPicker();
+  buildDecoderPanel();
+  document.documentElement.style.setProperty('--dec-row-h', DEC_ROW_H + 'px');
+  decoders.loadDefs().then(fillDecoderMenu);
   for (const id of ['samples', 'pre', 'timeout']) {
     if (settings[id] != null) $(id).value = settings[id];
   }

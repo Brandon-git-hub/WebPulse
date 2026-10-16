@@ -5,8 +5,9 @@
 
 PLATFORM is e.g. win64 (-> .zip with webpulse.exe) or linux-x86_64 (-> .tar.gz).
 The archive holds one top-level folder webpulse-<version>-<platform>/ with the
-executable, firmware/, README.md and LICENSE. The version is read from
-CMakeLists.txt; the archive path is printed on stdout.
+executable, firmware/, decoders/ (example user decoders), README.md and
+LICENSE. The version is read from CMakeLists.txt; the archive path is printed
+on stdout.
 """
 import pathlib
 import re
@@ -36,6 +37,7 @@ def main():
     top = f"webpulse-{version()}-{platform}"
     files = [(exe, exe.name), (ROOT / "README.md", "README.md"), (ROOT / "LICENSE", "LICENSE")]
     files += [(f, f"firmware/{f.name}") for f in sorted((ROOT / "firmware").iterdir()) if f.is_file()]
+    files += [(f, f"decoders/{f.name}") for f in sorted((ROOT / "decoders").glob("*.js"))]
 
     out.mkdir(parents=True, exist_ok=True)
     if windows:

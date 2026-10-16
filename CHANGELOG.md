@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Protocol decoders: UART, SPI, I²C, Parallel and Counter, shown as rows
+  below the channels; your own decoders as JavaScript files in `decoders/`
+  (see README). New `/api/transitions` and `/api/decoders` endpoints.
+- Light theme (or follow the system); one Run/Stop button.
+- Reorder channels by dragging.
+
 - If the default port 9002 is taken, use the next free one up to 9011 (not
   when `-p` is given) and print the address actually used.
 - When the HTTP server cannot listen, say why (port in use, reserved by

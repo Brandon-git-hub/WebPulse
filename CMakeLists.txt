@@ -92,6 +92,13 @@ add_custom_command(TARGET webpulse POST_BUILD
             ${CMAKE_SOURCE_DIR}/firmware/README.md
             $<TARGET_FILE_DIR:webpulse>/firmware/)
 
+# ...and the example user decoders (the folder --decoders defaults to).
+file(GLOB WP_USER_DECODERS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/decoders/*.js)
+add_custom_command(TARGET webpulse POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:webpulse>/decoders
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${WP_USER_DECODERS}
+            $<TARGET_FILE_DIR:webpulse>/decoders/)
+
 # --- tests (native builds only) -------------------------------------------------
 if(NOT CMAKE_CROSSCOMPILING)
     enable_testing()
@@ -101,4 +108,9 @@ if(NOT CMAKE_CROSSCOMPILING)
         target_compile_options(test_${t} PRIVATE ${WP_WARNINGS})
         add_test(NAME ${t} COMMAND test_${t})
     endforeach()
+    # Decoder runtime and built-in decoders (JavaScript), when Node.js 22+ is found.
+    find_program(NODE_EXECUTABLE node)
+    if(NODE_EXECUTABLE)
+        add_test(NAME decoders COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/decoders_test.mjs)
+    endif()
 endif()

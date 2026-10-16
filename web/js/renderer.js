@@ -1,7 +1,8 @@
 // Canvas 2D waveform renderer.
 //
 // Layout (css px): a ruler of RULER_H at the top, then one row of ROW_H per
-// enabled channel; disabled channels take no space. Data comes from the server as either raw samples or per-pixel
+// enabled channel (disabled channels take no space), then one row of DEC_ROW_H
+// per protocol decoder annotation row. Data comes from the server as either raw samples or per-pixel
 // summaries (see server.c); both are mapped into the current viewport so a
 // slightly stale response still lines up while the user pans or zooms.
 
@@ -9,6 +10,7 @@ import { niceStep, tickLabel } from './format.js';
 
 export const RULER_H = 30;
 export const ROW_H = 44;
+export const DEC_ROW_H = 26;
 export const CHANNELS = 8;
 
 // Canvas colours come from CSS custom properties (--cv-*) so the light and
@@ -20,8 +22,19 @@ const COLOR_VARS = {
   textStrong: '--cv-text-strong', outside: '--cv-outside', trigger: '--cv-trigger',
   triggerInk: '--cv-trigger-ink', cursorA: '--cursor-a', cursorB: '--cursor-b',
   cursorInk: '--cv-cursor-ink', cursorShade: '--cv-cursor-shade', dots: '--cv-dots',
-  hover: '--cv-hover',
+  hover: '--cv-hover', decError: '--danger',
 };
+
+/** Index of the first element of sorted array a that is > v. */
+function upperBound(a, v) {
+  let lo = 0, hi = a.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (a[mid] <= v) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
 
 export function loadTheme() {
   const cs = getComputedStyle(document.documentElement);
@@ -44,6 +57,9 @@ export class Renderer {
     this.cssW = 0;
     this.rows = [];             // [{ top, h }] per channel
     this.order = Array.from({ length: CHANNELS }, (_, c) => c);   // display order, top first
+    // Decoder rows below the channels: { label, color, error, status, data }
+    // where data = { start: number[], end: number[], text: string[][] } or null.
+    this.decRows = [];
     this.layout();
     this.pending = false;
   }
@@ -56,6 +72,11 @@ export class Renderer {
       const h = this.channels[c].enabled ? ROW_H : 0;
       this.rows[c] = { top: y, h };
       y += h;
+    }
+    this.chBottom = y;
+    for (const r of this.decRows) {
+      r.top = y;
+      y += DEC_ROW_H;
     }
     this.cssH = y;
   }
@@ -129,6 +150,7 @@ export class Renderer {
       const ticks = this.ticks(W);
       this.drawGrid(ticks, H);
       this.drawWaves(W);
+      this.drawDecoders(W);
       this.drawMeasure(W);
       this.drawTrigger(H);
       this.drawRuler(ticks, W);
@@ -143,11 +165,108 @@ export class Renderer {
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let c = 0; c <= CHANNELS; c++) {
-      const y = (c < CHANNELS ? this.rows[c].top : H) - 0.5;
+      const y = (c < CHANNELS ? this.rows[c].top : this.chBottom) - 0.5;
       ctx.moveTo(0, y);
       ctx.lineTo(W, y);
     }
+    for (const r of this.decRows) {
+      ctx.moveTo(0, r.top + DEC_ROW_H - 0.5);
+      ctx.lineTo(W, r.top + DEC_ROW_H - 0.5);
+    }
     ctx.stroke();
+    if (this.decRows.length) {
+      ctx.strokeStyle = COLORS.gridStrong;
+      ctx.beginPath();
+      ctx.moveTo(0, this.chBottom - 0.5);
+      ctx.lineTo(W, this.chBottom - 0.5);
+      ctx.stroke();
+    }
+  }
+
+  /** Decoder row at css y: { row, index }, or null. */
+  decoderAt(y) {
+    for (let i = 0; i < this.decRows.length; i++) {
+      const r = this.decRows[i];
+      if (y >= r.top && y < r.top + DEC_ROW_H) return { row: r, index: i };
+    }
+    return null;
+  }
+
+  /** Annotation of decoder row r under css x: { start, end, text } or null. */
+  annotationAt(r, x) {
+    const d = r.data;
+    if (!d || !d.start.length) return null;
+    const s = this.vp.sampleAt(x);
+    const tol = this.vp.spp * 2;          // a couple of pixels for thin marks
+    // Sorted by start and rarely overlapping: the last few starting left of
+    // the pointer are the only candidates.
+    const last = upperBound(d.start, s + tol) - 1;
+    for (let i = last; i >= 0 && i > last - 8; i--) {
+      if (d.start[i] - tol <= s && s <= d.end[i] + tol) {
+        return { start: d.start[i], end: d.end[i], text: d.text[i] };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Annotations as boxes with the longest text that fits. Where annotations
+   * are narrower than a pixel, one mark per pixel is drawn and the rest are
+   * skipped, so the cost stays proportional to the width.
+   */
+  drawDecoders(W) {
+    const { ctx, vp } = this;
+    if (!this.decRows.length) return;
+    ctx.font = '11px ui-monospace, Consolas, monospace';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    const charW = this.charW || (this.charW = ctx.measureText('M').width || 7);
+    const s0 = vp.sampleAt(0), s1 = vp.sampleAt(W);
+    for (const r of this.decRows) {
+      const y0 = r.top + 4, h = DEC_ROW_H - 8, ym = r.top + DEC_ROW_H / 2;
+      const color = r.error ? COLORS.decError : r.color;
+      if (!r.data) {
+        if (r.status) {
+          ctx.textAlign = 'left';
+          ctx.fillStyle = r.error ? COLORS.decError : COLORS.text;
+          ctx.fillText(r.status, 8, ym);
+          ctx.textAlign = 'center';
+        }
+        continue;
+      }
+      const { start, end, text } = r.data;
+      let i = Math.max(0, upperBound(start, s0) - 1);
+      while (i < start.length && start[i] <= s1) {
+        if (end[i] < s0) { i++; continue; }
+        const x0 = vp.xOf(start[i]), x1 = vp.xOf(end[i]);
+        const w = x1 - x0;
+        if (w < 3) {
+          // Dense: one mark for this pixel, then jump past it.
+          ctx.fillStyle = color;
+          ctx.globalAlpha = 0.7;
+          ctx.fillRect(Math.floor(x0), y0, Math.max(1, Math.ceil(w)), h);
+          ctx.globalAlpha = 1;
+          const next = upperBound(start, vp.sampleAt(Math.floor(x0) + 1));
+          i = Math.max(i + 1, next);
+          continue;
+        }
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.22;
+        ctx.fillRect(x0, y0, w, h);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(Math.round(x0) + 0.5, y0 + 0.5, Math.max(1, Math.round(w) - 1), h - 1);
+        const room = Math.min(x1, W) - Math.max(x0, 0) - 6;
+        const t = text[i].find((s) => s.length * charW <= room);
+        if (t) {
+          ctx.fillStyle = COLORS.textStrong;
+          ctx.fillText(t, (Math.max(x0, 0) + Math.min(x1, W)) / 2, ym + 0.5);
+        }
+        i++;
+      }
+    }
+    ctx.textAlign = 'left';
   }
 
   /** Shade the area before sample 0 and after the last sample. */
