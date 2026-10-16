@@ -186,6 +186,7 @@ for (const mode of [0, 1, 2, 3]) {
   const thrower = { rows: [{ id: 'x' }], *decode(d) { d.put(0, 1, 'x', 'a'); throw new Error('boom'); } };
   const t = runDecoder(thrower, {}, { a: 0 }, transitions(s, 1), 1e6);
   check(/boom/.test(t.error) && t.rows.x.start.length === 1, 'decoder exception keeps earlier annotations');
+  check(/^boom \(decoders_test\.mjs:\d+\)$/.test(t.error), `error shown as message and location (${t.error})`);
 }
 
 if (failures) {

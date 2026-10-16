@@ -355,7 +355,6 @@ function cycleTheme() {
 }
 
 function buildChannelList() {
-  const list = $('channels');
   channels.forEach((ch, i) => {
     const row = document.createElement('div');
     row.className = 'ch';
@@ -471,7 +470,8 @@ function buildDecoderPanel() {
     btn.focus();
   });
   $('dec-add').addEventListener('click', () => {
-    const inst = decoders.add($('dec-add-sel').value, order.filter((c) => channels[c].enabled));
+    const inst = decoders.add($('dec-add-sel').value, order.filter((c) => channels[c].enabled),
+      channels.map((ch) => ch.name));
     if (!inst) return;
     saveSettings();
     editDecoder(inst);
@@ -624,7 +624,7 @@ function showAnnotation(row, ann) {
 
 /** Put the list rows in display order (appendChild moves existing nodes). */
 function placeRows() {
-  const list = $('channels');
+  const list = $('ch-rows');
   for (const c of order) list.appendChild(channels[c].row);
 }
 

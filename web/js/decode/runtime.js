@@ -166,11 +166,21 @@ export function runDecoder(dec, opt, assign, tr, rate) {
       step = gen.next(s);
     }
   } catch (e) {
-    error = e instanceof DecodeError ? e.message : (e && e.stack) || String(e);
+    error = describe(e);
   } finally {
     try { gen.return(); } catch { /* ignore */ }
   }
   return { rows, count, error };
+}
+
+/** An error from a decoder as "message (file.js:line)", without the stack. */
+function describe(e) {
+  if (!(e instanceof Error)) return String(e);
+  if (e instanceof DecodeError) return e.message;
+  // The first stack frame outside this runtime is where the decoder threw.
+  const frame = (e.stack || '').split('\n').slice(1).find((l) => !/\/decode\/(runtime|worker)\.js/.test(l)) || '';
+  const m = /([^/\s()]+\.m?js)(?:\?[^:\s)]*)?:(\d+)/.exec(frame);
+  return m ? `${e.message} (${m[1]}:${m[2]})` : e.message;
 }
 
 // ---- text formatting helpers (also available as d.hex(...) etc.) ------------

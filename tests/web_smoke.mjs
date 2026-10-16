@@ -182,7 +182,7 @@ await waitFor(() => $('state').dataset.state !== 'offline', 3000, 'websocket');
 check($('state').dataset.state !== 'offline', `websocket connected, state=${$('state').dataset.state}`);
 
 // Trigger: CH7 rising edge
-const ch7 = $('channels').children[7];
+const ch7 = $('ch-rows').children[7];
 const trig = ch7.querySelector('.trig');
 trig.value = 'R';
 trig.dispatch('change');
@@ -200,7 +200,7 @@ check($('export-vcd').href.startsWith('api/export?fmt=vcd&names=CH0%2CCH1'), `ex
 
 // Channel picker: hide CH2, bulk enable/disable, export only what is shown.
 {
-  const rows = $('channels').children;
+  const rows = $('ch-rows').children;
   const picks = $('channels-grid').children;
   const btn = (act, sel) => $('channels-pop').querySelectorAll('button').find((b) => b.dataset.act === act && b.dataset.sel === sel);
   const pick = (i, on) => {
@@ -343,7 +343,7 @@ await sleep(150);
 const meas = $('measure')._html || '';
 check(!$('measure').hidden && meas.includes('Period</span> 4 µs') && meas.includes('Duty</span> 50.0 %') &&
       meas.includes('250 kHz'), `CH5 measured (${meas.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')})`);
-check($('channels').children[5].classList.contains('active'), 'hovered channel highlighted');
+check($('ch-rows').children[5].classList.contains('active'), 'hovered channel highlighted');
 
 // Edge stepping moves cursor A by half a period (2 µs) on CH5. With the
 // cursors cleared, stepping starts from the centre of the view.
@@ -432,7 +432,7 @@ check($('run').dataset.mode === 'run' && !$('run').disabled, 'Run button back to
 
 // Channel order: Alt+Down in a name box, dragging a grip, Reset order
 {
-  const list = $('channels');
+  const list = $('ch-rows');
   const shown = () => list.children.map((r) => r.dataset.ch).join('');
   const rowOf = (c) => list.children.find((r) => r.dataset.ch === c);
   const nameKey = (c, key) => rowOf(c).querySelector('.name').dispatch('keydown', { key, altKey: true });
@@ -465,7 +465,7 @@ check($('run').dataset.mode === 'run' && !$('run').disabled, 'Run button back to
 
 // Theme: auto -> light -> dark; default colours follow, a picked colour stays
 {
-  const colorIn = (i) => $('channels').children[i].querySelector('input[type=color]');
+  const colorIn = (i) => $('ch-rows').children[i].querySelector('input[type=color]');
   const c1 = colorIn(1);
   c1.value = '#123456';
   c1.dispatch('input');
@@ -490,7 +490,7 @@ check($('run').dataset.mode === 'run' && !$('run').disabled, 'Run button back to
   $('open-file').dispatch('change');
   await waitFor(() => $('state-detail').textContent.includes('opened roundtrip.sr'), 10000, 'opened file');
   check($('state-detail').textContent.startsWith(n0.split(' ·')[0]), `same samples / rate (${$('state-detail').textContent})`);
-  const rows = $('channels').children;
+  const rows = $('ch-rows').children;
   const rowOf = (c) => rows.find((r) => r.dataset.ch === c);
   check(rowOf(0).querySelector('.name').value === 'rx' && rowOf(1).querySelector('.name').value === 'tx',
     'names from the file applied');

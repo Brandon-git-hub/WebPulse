@@ -69,6 +69,21 @@ jobs:
           node tests/web_smoke.mjs http://127.0.0.1:18080/
           kill "$pid"
 
+      - name: Browser check (headless Chrome)
+        run: |
+          ./build/linux/webpulse -b sim -p 18081 &
+          pid=$!
+          sleep 1
+          CHROME=google-chrome node tests/browser_check.mjs http://127.0.0.1:18081/ screenshots
+          kill "$pid"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+
       - name: Package
         run: python3 tools/package.py build/linux linux-x86_64 dist
 

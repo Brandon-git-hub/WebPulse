@@ -9,7 +9,7 @@ export default {
   desc: 'Parallel bus value from up to 8 lines, optionally clocked',
   channels: [
     { id: 'clk', name: 'CLK', desc: 'Clock (leave unassigned to follow data changes)', optional: true },
-    ...DATA.map((id, i) => ({ id, name: `D${i}`, desc: `Data bit ${i}`, optional: true })),
+    ...DATA.map((id, i) => ({ id, name: `D${i}`, desc: `Data bit ${i}`, optional: true, auto: true })),
   ],
   options: [
     { id: 'edge', name: 'Clock edge', default: 'rising', values: ['rising', 'falling', 'either'] },

@@ -5,7 +5,7 @@ export default {
   id: 'uart',
   name: 'UART',
   desc: 'Asynchronous serial (RS-232 / TTL UART), one line',
-  channels: [{ id: 'rx', name: 'RX / TX', desc: 'Serial data line' }],
+  channels: [{ id: 'rx', name: 'RX / TX', desc: 'Serial data line', aliases: ['tx', 'txd', 'rxd', 'uart'] }],
   options: [
     { id: 'baud', name: 'Baud rate', default: 115200 },
     { id: 'bits', name: 'Data bits', default: 8, values: [5, 6, 7, 8, 9] },

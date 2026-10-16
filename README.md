@@ -171,7 +171,9 @@ export default {
   id: 'pwm',
   name: 'PWM',
   desc: 'Duty cycle of each period',                  // optional
-  channels: [{ id: 'pwm', name: 'PWM' }],              // optional: true for optional lines
+  channels: [{ id: 'pwm', name: 'PWM' }],              // optional: true for optional lines;
+                                                       // auto: true assigns an optional one on Add;
+                                                       // aliases: ['sck'] other channel names to match
   options: [{ id: 'active', name: 'Active level', default: 'high', values: ['high', 'low'] }],
   rows: [{ id: 'duty', name: 'Duty' }],                // annotation rows, top to bottom
 
@@ -285,6 +287,10 @@ through the summary pyramid, so it is fast on any capture length.
   encoding, JSON, the capture engine with the simulator, and VCD/CSV export.
 - `tests/decoders_test.mjs` checks the decoder runtime and the built-in
   decoders on generated waveforms (run by `ctest` when Node.js is found).
+- `tests/browser_check.mjs` drives the UI in headless Chrome (`$CHROME`, or
+  `chromium` on PATH) against the simulator: the side list lines up with the
+  canvas, decoders run in a Web Worker, no script errors; with a second
+  argument it saves screenshots there.
 - `tests/web_smoke.mjs` runs the real `web/js/app.js` under Node 22+ with a
   fake DOM against a live server, and drives it like a user would:
 

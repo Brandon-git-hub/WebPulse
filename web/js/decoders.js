@@ -55,13 +55,32 @@ export class Decoders {
     return this.defs.find((d) => d.key === key && d.def);
   }
 
-  /** Add a decoder; channels are assigned to the first channels in `order`. */
-  add(key, order) {
+  /**
+   * Add a decoder. A decoder channel goes to a capture channel named like its
+   * id, name or one of its aliases (e.g. "SCL", "sclk"), shown or not; else
+   * required and `auto` ones go to the next unused channels in `order` (the
+   * shown ones); other optional ones stay unassigned.
+   * names: the capture channel names, by channel number.
+   */
+  add(key, order, names = []) {
     const d = this.def(key);
     if (!d) return null;
     const assign = {};
-    let k = 0;
-    for (const ch of d.def.channels || []) assign[ch.id] = ch.optional ? null : order[k++ % order.length];
+    const used = new Set();
+    const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+    for (const ch of d.def.channels || []) {
+      const want = [ch.id, ch.name, ...(ch.aliases || [])].map(norm);
+      const hit = names.findIndex((n, c) => !used.has(c) && n && want.includes(norm(n)));
+      assign[ch.id] = hit < 0 ? null : hit;
+      if (hit >= 0) used.add(hit);
+    }
+    for (const ch of d.def.channels || []) {
+      if (assign[ch.id] !== null || (ch.optional && !ch.auto)) continue;
+      const free = order.find((c) => !used.has(c));
+      if (free === undefined) break;
+      assign[ch.id] = free;
+      used.add(free);
+    }
     const options = {};
     for (const o of d.def.options || []) options[o.id] = o.default;
     const n = this.list.filter((i) => i.key === key).length;

@@ -5,10 +5,10 @@ export default {
   name: 'SPI',
   desc: 'Serial Peripheral Interface',
   channels: [
-    { id: 'clk', name: 'CLK', desc: 'Clock' },
-    { id: 'mosi', name: 'MOSI', desc: 'Master out, slave in', optional: true },
-    { id: 'miso', name: 'MISO', desc: 'Master in, slave out', optional: true },
-    { id: 'cs', name: 'CS#', desc: 'Chip select', optional: true },
+    { id: 'clk', name: 'CLK', desc: 'Clock', aliases: ['sclk', 'sck'] },
+    { id: 'mosi', name: 'MOSI', desc: 'Master out, slave in', optional: true, auto: true, aliases: ['sdo', 'copi'] },
+    { id: 'miso', name: 'MISO', desc: 'Master in, slave out', optional: true, aliases: ['sdi', 'cipo'] },
+    { id: 'cs', name: 'CS#', desc: 'Chip select', optional: true, auto: true, aliases: ['ss', 'nss', 'csn'] },
   ],
   options: [
     { id: 'cpol', name: 'Clock polarity (CPOL)', default: 0, values: [0, 1] },

@@ -13,6 +13,7 @@
   Connections from the same computer need none.
 - Light theme (or follow the system); one Run/Stop button.
 - Reorder channels by dragging.
+- New decoders pick channels by name (e.g. a channel named "SCLK" or "SDA").
 
 - If the default port 9002 is taken, use the next free one up to 9011 (not
   when `-p` is given) and print the address actually used.
