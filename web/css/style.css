@@ -255,6 +255,9 @@ button.primary:hover:not(:disabled) { filter: brightness(1.1); border-color: var
 }
 #wave.dragging { cursor: grabbing; }
 
+/* Classes below set display:, which would otherwise override [hidden]. */
+[hidden] { display: none !important; }
+
 .empty {
   position: absolute;
   inset: var(--ruler-h) 0 0 0;

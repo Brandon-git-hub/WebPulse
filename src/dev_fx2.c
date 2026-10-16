@@ -18,6 +18,9 @@
 
 #include <libusb.h>
 #include <pthread.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,6 +49,10 @@ typedef struct {
     atomic_int gone;            /* device disconnected during acquisition */
     unsigned nxfer;
     unsigned empty;
+    uint64_t rx_bytes;          /* bytes received in this acquisition */
+    uint64_t t_start_us;
+    uint64_t rate;
+    int raw_io;                 /* WinUSB RAW_IO enabled on the data endpoint */
 } fx2_priv;
 
 /* ---- open / firmware ----------------------------------------------------- */
@@ -258,10 +265,26 @@ static void fx2_close(wp_device *d)
     }
     p->model[0] = '\0';
     p->fw_version[0] = '\0';
+    p->raw_io = 0;
     d->is_open = 0;
 }
 
 /* ---- acquisition --------------------------------------------------------- */
+
+static void end_once(fx2_priv *p, int err, const char *msg);
+
+/* Overflow message with how far the stream got, e.g. to tell a slow start
+ * from a gap in the middle of a capture. */
+static void end_overflow(fx2_priv *p, const char *what)
+{
+    char msg[160];
+    double ms = (double)(wp_now_us() - p->t_start_us) / 1000.0;
+    snprintf(msg, sizeof(msg), "%s after %.1f MB / %.0f ms at %.1f MHz%s", what,
+             (double)p->rx_bytes / 1e6, ms, (double)p->rate / 1e6,
+             p->raw_io ? "" : ", RAW_IO off");
+    fprintf(stderr, "fx2: %s\n", msg);
+    end_once(p, WP_DEV_ERR_OVERFLOW, msg);
+}
 
 static void end_once(fx2_priv *p, int err, const char *msg)
 {
@@ -300,13 +323,13 @@ static void LIBUSB_CALL xfer_cb(struct libusb_transfer *x)
             size_t len = (size_t)x->actual_length;
             p->empty = 0;
             if (p->sink->write(p->sink, x->buffer, len) < len) {
-                end_once(p, WP_DEV_ERR_OVERFLOW, "host ring buffer full");
+                end_overflow(p, "host ring buffer full");
                 break;
             }
+            p->rx_bytes += len;
         } else if (++p->empty > p->nxfer * 2) {
             /* fx2lafw stops streaming when its FIFO overflows. */
-            end_once(p, WP_DEV_ERR_OVERFLOW,
-                     "device stopped sending data (FX2 FIFO overflow)");
+            end_overflow(p, "FX2 FIFO overflow (USB read gap)");
             break;
         }
         if (libusb_submit_transfer(x) != 0) {
@@ -350,6 +373,11 @@ static void *event_thread(void *arg)
     fx2_priv *p = arg;
     int cancelled = 0;
 
+#ifdef _WIN32
+    /* The FX2 FIFO holds well under 1 ms of data at high rates, so the
+     * resubmission path must not be pre-empted by e.g. the browser. */
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+#endif
     while (atomic_load(&p->active) > 0) {
         struct timeval tv = { 0, 100000 };
         if (atomic_load(&p->stop) && !cancelled) {
@@ -359,6 +387,42 @@ static void *event_thread(void *arg)
         libusb_handle_events_timeout_completed(p->ctx, &tv, NULL);
     }
     return NULL;
+}
+
+/*
+ * WinUSB by default handles the reads queued on a pipe one after another, which
+ * leaves a short gap between transfers; at a few MHz that is longer than the
+ * FX2 FIFO (4 x 512 bytes) can absorb, the FIFO fills and fx2lafw stops. RAW_IO
+ * hands all queued reads to the host controller at once. It requires every
+ * transfer to be a multiple of the packet size and at most the size reported
+ * by WinUSB. Elsewhere this returns NOT_SUPPORTED and nothing changes.
+ */
+static void enable_raw_io(fx2_priv *p, size_t *size)
+{
+#if defined(LIBUSB_API_VERSION) && LIBUSB_API_VERSION >= 0x0100010C
+    int max, r;
+
+    if (p->raw_io)
+        goto clamp;
+    r = libusb_endpoint_set_raw_io(p->h, FX2_EP_DATA_IN, 1);
+    if (r != 0) {
+        if (r != LIBUSB_ERROR_NOT_SUPPORTED)
+            fprintf(stderr, "fx2: cannot enable WinUSB RAW_IO: %s\n", libusb_error_name(r));
+        return;
+    }
+    p->raw_io = 1;
+clamp:
+    max = libusb_get_max_raw_io_transfer_size(p->h, FX2_EP_DATA_IN);
+    if (p->raw_io == 1) {
+        p->raw_io = 2;
+        fprintf(stderr, "fx2: WinUSB RAW_IO enabled (max transfer %d bytes)\n", max);
+    }
+    if (max >= 512 && *size > (size_t)max)
+        *size = (size_t)max & ~(size_t)511;
+#else
+    (void)p;
+    (void)size;
+#endif
 }
 
 static int fx2_start(wp_device *d, uint64_t rate, wp_sink *sink, char *err, size_t errlen)
@@ -380,8 +444,11 @@ static int fx2_start(wp_device *d, uint64_t rate, wp_sink *sink, char *err, size
     size = wp_fx2_transfer_size(rate);
     p->nxfer = wp_fx2_num_transfers(rate);
     timeout = wp_fx2_timeout_ms(rate);
+    enable_raw_io(p, &size);
     p->sink = sink;
     p->empty = 0;
+    p->rx_bytes = 0;
+    p->rate = rate;
     atomic_store(&p->stop, 0);
     atomic_store(&p->ended, 0);
     atomic_store(&p->active, 0);
@@ -418,6 +485,7 @@ static int fx2_start(wp_device *d, uint64_t rate, wp_sink *sink, char *err, size
     }
     p->running = 1;
 
+    p->t_start_us = wp_now_us();
     r = libusb_control_transfer(p->h,
         LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE,
         FX2_CMD_START, 0, 0, cmd, sizeof(cmd), CTRL_TIMEOUT_MS);

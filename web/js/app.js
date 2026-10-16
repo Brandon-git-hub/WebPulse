@@ -314,13 +314,15 @@ function onStatus(st) {
     renderer.clearData();
     renderer.cursors = { a: null, b: null };
     $('empty').hidden = false;
-    $('empty').querySelector('.big').textContent = busy ? 'Capturing…' : 'No capture';
     updateExportLinks();
     updateCursorReadout();
     updateViewInfo();
-  } else if (!cap && busy) {
+  }
+  if (!cap) {
     $('empty').querySelector('.big').textContent =
-      st.state === 'armed' ? 'Waiting for trigger…' : 'Capturing…';
+      st.state === 'armed' ? 'Waiting for trigger…' :
+      busy ? 'Capturing…' :
+      st.state === 'error' ? 'Capture failed' : 'No capture';
   }
 }
 

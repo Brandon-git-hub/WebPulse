@@ -270,8 +270,8 @@ static void *worker_main(void *arg)
 
     if (aborted == 2) {
         free(buf);
-        set_error(e, "data overflow: the host did not read samples fast enough "
-                     "(try a lower sample rate)");
+        set_error(e, "data overflow: %s (try a lower sample rate)",
+                  e->dev_msg[0] ? e->dev_msg : "the host did not read samples fast enough");
         goto out;
     }
     if (aborted == 3 && !(triggered && filled > 0)) {
