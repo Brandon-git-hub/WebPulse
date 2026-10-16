@@ -8,8 +8,15 @@ import { Viewport } from './viewport.js';
 
 const $ = (id) => document.getElementById(id);
 
-const DEFAULT_COLORS = ['#f4c542', '#4fc3f7', '#81c784', '#ff8a65',
-                        '#ba68c8', '#4db6ac', '#e57373', '#aed581'];
+// Resistor colour code (brown, red, orange, yellow, black, green, blue, violet)
+// in light tints that read well on the dark background; "black" is drawn as a
+// light grey since a dark line would vanish.
+const DEFAULT_COLORS = ['#c69a6d', '#e57373', '#ffa95e', '#f4d35e',
+                        '#b8c0cc', '#81c784', '#64b5f6', '#b388ff'];
+// Defaults of earlier versions: a saved colour equal to one of these was never
+// picked by the user, so it follows the new default.
+const OLD_DEFAULT_COLORS = ['#f4c542', '#4fc3f7', '#81c784', '#ff8a65',
+                            '#ba68c8', '#4db6ac', '#e57373', '#aed581'];
 const TRIG_OPTIONS = [
   ['X', '·', "don't care"], ['0', '0', 'low'], ['1', '1', 'high'],
   ['R', '↑', 'rising edge'], ['F', '↓', 'falling edge'], ['E', '↕', 'either edge'],
@@ -45,7 +52,8 @@ const channels = Array.from({ length: CHANNELS }, (_, i) => {
   const saved = (settings.channels || [])[i] || {};
   return {
     name: typeof saved.name === 'string' ? saved.name : `CH${i}`,
-    color: /^#[0-9a-f]{6}$/i.test(saved.color || '') ? saved.color : DEFAULT_COLORS[i],
+    color: /^#[0-9a-f]{6}$/i.test(saved.color || '') && saved.color !== OLD_DEFAULT_COLORS[i]
+      ? saved.color : DEFAULT_COLORS[i],
     trig: TRIG_OPTIONS.some((o) => o[0] === saved.trig) ? saved.trig : 'X',
     enabled: saved.enabled !== false,
   };
