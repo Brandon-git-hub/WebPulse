@@ -2,6 +2,7 @@
 // Positions are in CSS pixels; samples are capture sample indices.
 
 export const MIN_SPP = 1 / 64;   // at most 64 px per sample
+const HISTORY_MAX = 50;
 
 export class Viewport {
   constructor() {
@@ -10,6 +11,7 @@ export class Viewport {
     this.spp = 1;         // samples per css px
     this.capture = null;  // { n, rate, trigger_pos }
     this.listeners = [];
+    this.history = [];    // earlier views for back(), newest last
   }
 
   onChange(fn) { this.listeners.push(fn); }
@@ -17,7 +19,38 @@ export class Viewport {
 
   setCapture(cap) {
     this.capture = cap;
+    this.history = [];
     this.fit();
+  }
+
+  /** Remember the current view so back() can return to it. */
+  save() {
+    if (!this.capture) return;
+    const last = this.history[this.history.length - 1];
+    if (last && last.start === this.start && last.spp === this.spp) return;
+    this.history.push({ start: this.start, spp: this.spp });
+    if (this.history.length > HISTORY_MAX) this.history.shift();
+  }
+
+  get canGoBack() { return this.history.length > 0; }
+
+  back() {
+    const v = this.history.pop();
+    if (!v || !this.capture) return;
+    this.spp = v.spp;
+    this.start = v.start;
+    this.clamp();
+    this.emit();
+  }
+
+  /** Show samples [s0, s1) with a small margin on both sides. */
+  zoomTo(s0, s1) {
+    if (!this.capture || !(s1 > s0)) return;
+    const span = (s1 - s0) * 1.1;
+    this.spp = Math.min(Math.max(span / this.width, MIN_SPP), this.maxSpp);
+    this.start = (s0 + s1) / 2 - (this.width / 2) * this.spp;
+    this.clamp();
+    this.emit();
   }
 
   setWidth(w) {

@@ -511,7 +511,7 @@ function connect() {
 
 // ---- canvas interaction -------------------------------------------------------------------
 
-const drag = { active: false, mode: null, x0: 0, last: 0, moved: false };
+const drag = { active: false, mode: null, button: 0, x0: 0, last: 0, moved: false, saved: false };
 
 function localX(ev) {
   const r = canvas.getBoundingClientRect();
@@ -534,26 +534,55 @@ function setCursor(k, x) {
   updateCursorReadout();
 }
 
+// Mouse: left drag pans, left double-click zooms in, right double-click zooms
+// out (Ctrl: x8 instead of x2), Shift+left / Shift+right places cursor A / B,
+// dragging a cursor line moves it. Double-clicks are detected here rather than
+// with 'dblclick' because browsers have no right-button double-click event.
+const DBL_MS = 400, DBL_PX = 6, CLICK_PX = 3;
+const lastClick = { button: -1, at: 0, x: 0 };
+
+function zoomBy(x, factor) {
+  vp.save();
+  vp.zoomAt(x, factor);
+  updateZoomButtons();
+}
+
+canvas.addEventListener('contextmenu', (ev) => ev.preventDefault());
+
 canvas.addEventListener('pointerdown', (ev) => {
-  if (!vp.capture || ev.button !== 0) return;
+  if (!vp.capture || (ev.button !== 0 && ev.button !== 2)) return;
   const { x } = localX(ev);
   const near = cursorNear(x);
-  drag.active = true;
-  drag.mode = near ? 'cursor-' + near : 'pan';
+  drag.button = ev.button;
   drag.x0 = drag.last = x;
   drag.moved = false;
+  if (ev.shiftKey) {
+    const k = ev.button === 0 ? 'a' : 'b';
+    setCursor(k, x);
+    drag.mode = 'cursor-' + k;      // keep the button down to drag it
+  } else if (near && ev.button === 0) {
+    drag.mode = 'cursor-' + near;
+  } else {
+    drag.mode = ev.button === 0 ? 'pan' : 'click';
+  }
+  drag.active = true;
   canvas.setPointerCapture(ev.pointerId);
-  if (drag.mode === 'pan') canvas.classList.add('dragging');
 });
 
 canvas.addEventListener('pointermove', (ev) => {
   const { x } = localX(ev);
   renderer.hoverX = vp.capture ? x : null;
   if (drag.active) {
-    if (Math.abs(x - drag.x0) > 3) drag.moved = true;
-    if (drag.mode === 'pan') {
+    if (Math.abs(x - drag.x0) > CLICK_PX) drag.moved = true;
+    if (drag.mode === 'pan' && drag.moved) {
+      if (!drag.saved) {
+        vp.save();
+        drag.saved = true;
+        canvas.classList.add('dragging');
+      }
       vp.panPx(x - drag.last);
-    } else if (drag.moved) {
+      updateZoomButtons();
+    } else if (drag.mode.startsWith('cursor-') && drag.moved) {
       setCursor(drag.mode.slice(-1), x);
     }
     drag.last = x;
@@ -569,11 +598,22 @@ canvas.addEventListener('pointerup', (ev) => {
   const { x } = localX(ev);
   canvas.releasePointerCapture(ev.pointerId);
   canvas.classList.remove('dragging');
-  if (!drag.moved && drag.mode === 'pan') {
-    // A click (no drag) places a cursor: A, or B with Shift.
-    setCursor(ev.shiftKey ? 'b' : 'a', x);
-  }
+  const plain = !drag.moved && (drag.mode === 'pan' || drag.mode === 'click');
   drag.active = false;
+  drag.saved = false;
+  if (!plain) {
+    lastClick.button = -1;
+    return;
+  }
+  const now = performance.now();
+  if (lastClick.button === drag.button && now - lastClick.at < DBL_MS &&
+      Math.abs(x - lastClick.x) <= DBL_PX) {
+    const f = ev.ctrlKey ? 8 : 2;
+    zoomBy(lastClick.x, drag.button === 0 ? 1 / f : f);
+    lastClick.button = -1;
+  } else {
+    Object.assign(lastClick, { button: drag.button, at: now, x });
+  }
 });
 
 canvas.addEventListener('pointerleave', () => {
@@ -582,9 +622,13 @@ canvas.addEventListener('pointerleave', () => {
   $('cur-m').textContent = '–';
 });
 
+let lastWheel = 0;
 canvas.addEventListener('wheel', (ev) => {
   if (!vp.capture) return;
   ev.preventDefault();
+  // One history entry per burst of wheel events.
+  if (performance.now() - lastWheel > 500) vp.save();
+  lastWheel = performance.now();
   const { x } = localX(ev);
   const dx = ev.shiftKey ? ev.deltaY : ev.deltaX;
   const dy = ev.shiftKey ? 0 : ev.deltaY;
@@ -595,7 +639,43 @@ canvas.addEventListener('wheel', (ev) => {
     vp.zoomAt(x, Math.exp(dy * scale * 0.0025));
   }
   updateMouseReadout(x);
+  updateZoomButtons();
 }, { passive: false });
+
+// ---- zoom toolbar -------------------------------------------------------------------------
+
+function zoomToCursors() {
+  const { a, b } = renderer.cursors;
+  if (a == null || b == null || a === b) return;
+  vp.save();
+  vp.zoomTo(Math.min(a, b), Math.max(a, b));
+  updateZoomButtons();
+}
+
+function fitView() {
+  vp.save();
+  vp.fit();
+  updateZoomButtons();
+}
+
+function goBack() {
+  vp.back();
+  updateZoomButtons();
+}
+
+function updateZoomButtons() {
+  const has = !!vp.capture;
+  const { a, b } = renderer.cursors;
+  for (const id of ['zoom-in', 'zoom-out', 'zoom-fit']) $(id).disabled = !has;
+  $('zoom-ab').disabled = !has || a == null || b == null || a === b;
+  $('zoom-back').disabled = !has || !vp.canGoBack;
+}
+
+$('zoom-in').addEventListener('click', () => zoomBy(vp.width / 2, 0.5));
+$('zoom-out').addEventListener('click', () => zoomBy(vp.width / 2, 2));
+$('zoom-fit').addEventListener('click', fitView);
+$('zoom-ab').addEventListener('click', zoomToCursors);
+$('zoom-back').addEventListener('click', goBack);
 
 document.addEventListener('keydown', (ev) => {
   const tag = (ev.target && ev.target.tagName) || '';
@@ -609,16 +689,26 @@ document.addEventListener('keydown', (ev) => {
       if (!$('stop').disabled) stopCapture();
       break;
     case 'f': case 'F':
-      vp.fit();
+      fitView();
+      break;
+    case 'z': case 'Z':
+      zoomToCursors();
+      break;
+    case 'Backspace':
+      goBack();
       break;
     case 't': case 'T':
-      if (vp.capture && vp.capture.trigger_pos >= 0) vp.centreOn(vp.capture.trigger_pos);
+      if (vp.capture && vp.capture.trigger_pos >= 0) {
+        vp.save();
+        vp.centreOn(vp.capture.trigger_pos);
+        updateZoomButtons();
+      }
       break;
     case '+': case '=':
-      vp.zoomAt(W / 2, 0.5);
+      zoomBy(W / 2, 0.5);
       break;
     case '-': case '_':
-      vp.zoomAt(W / 2, 2);
+      zoomBy(W / 2, 2);
       break;
     case 'ArrowLeft':
       vp.panPx(W * 0.25);
@@ -653,6 +743,7 @@ function updateMouseReadout(x) {
 }
 
 function updateCursorReadout() {
+  updateZoomButtons();    // A<->B depends on the cursors, Back on the view
   const { a, b } = renderer.cursors;
   const t = (s) => (s == null || !vp.capture ? null : vp.timeOf(s));
   const ta = t(a), tb = t(b);

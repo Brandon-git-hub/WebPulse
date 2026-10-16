@@ -116,6 +116,7 @@ globalThis.fetch = (u, o) => realFetch(new URL(u, base), o);
 // ---- helpers -------------------------------------------------------------------
 
 const $ = (id) => document.getElementById(id);
+const DBL_WAIT = 450;   // longer than the UI's double-click window
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let failures = 0;
 function check(cond, msg) {
@@ -239,15 +240,25 @@ document.handlers.keydown.forEach((fn) => fn({ key: 'ArrowRight', target: {}, pr
 await sleep(300);
 check(drawCalls > 0, `raw mode redraw after pan (${drawCalls} draw calls)`);
 
-// Fit, then place cursors A and B with clicks
+// Fit, then place cursors A and B with Shift+left / Shift+right
 document.handlers.keydown.forEach((fn) => fn({ key: 'f', target: {}, preventDefault() {} }));
 await sleep(100);
-const click = (x, shiftKey = false) => {
-  $('wave').dispatch('pointerdown', { clientX: x, clientY: 100 });
-  $('wave').dispatch('pointerup', { clientX: x, clientY: 100, shiftKey });
+const UNITS = { s: 1, ms: 1e-3, 'µs': 1e-6, ns: 1e-9, ps: 1e-12 };
+const viewSpan = () => {
+  const m = /^view (\S+) (\S+)/.exec($('view-info').textContent);
+  return m ? Number(m[1]) * UNITS[m[2]] : NaN;
 };
+const click = (x, { button = 0, shiftKey = false, ctrlKey = false } = {}) => {
+  $('wave').dispatch('pointerdown', { clientX: x, clientY: 100, button, shiftKey, ctrlKey });
+  $('wave').dispatch('pointerup', { clientX: x, clientY: 100, button, shiftKey, ctrlKey });
+};
+const near = (a, b) => Math.abs(a / b - 1) < 0.02;
+const span0 = viewSpan();
 click(300);
-click(700, true);
+await sleep(DBL_WAIT);
+check($('cur-a').textContent === '–' && near(viewSpan(), span0), 'plain click does nothing');
+click(300, { shiftKey: true });
+click(700, { button: 2, shiftKey: true });
 check($('cur-a').textContent !== '–' && $('cur-b').textContent !== '–',
       `cursors placed (A=${$('cur-a').textContent}, B=${$('cur-b').textContent})`);
 check(/smp\)$/.test($('cur-dt').textContent), `delta-t readout (${$('cur-dt').textContent})`);
@@ -259,6 +270,41 @@ $('wave').dispatch('pointermove', { clientX: 350, clientY: 100 });
 $('wave').dispatch('pointerup', { clientX: 350, clientY: 100 });
 const a1 = $('cur-a').textContent;
 check(a1 !== '–', `cursor A dragged (${a1})`);
+
+// Double-click zoom: left in x2, right out x2, Ctrl x8; Back undoes each step
+await sleep(DBL_WAIT);
+check($('zoom-back').disabled === false, 'back enabled after fit');
+const s1 = viewSpan();
+click(600); click(600);
+check(near(viewSpan(), s1 / 2), `left double-click zooms in x2 (${s1} -> ${viewSpan()})`);
+await sleep(DBL_WAIT);
+click(600, { ctrlKey: true }); click(600, { ctrlKey: true });
+check(near(viewSpan(), s1 / 16), `ctrl double-click zooms in x8 (${viewSpan()})`);
+await sleep(DBL_WAIT);
+click(600, { button: 2 }); click(600, { button: 2 });
+check(near(viewSpan(), s1 / 8), `right double-click zooms out x2 (${viewSpan()})`);
+await sleep(DBL_WAIT);
+click(600); await sleep(DBL_WAIT); click(600);
+check(near(viewSpan(), s1 / 8), 'two slow clicks do not zoom');
+$('zoom-back').dispatch('click');
+check(near(viewSpan(), s1 / 16), `back (${viewSpan()})`);
+$('zoom-back').dispatch('click');
+$('zoom-back').dispatch('click');
+check(near(viewSpan(), s1), `back to the start (${viewSpan()})`);
+
+// Toolbar zoom buttons
+$('zoom-in').dispatch('click');
+check(near(viewSpan(), s1 / 2), 'zoom-in button');
+$('zoom-out').dispatch('click');
+check(near(viewSpan(), s1), 'zoom-out button');
+check(!$('zoom-ab').disabled, 'A<->B enabled with both cursors');
+$('zoom-ab').dispatch('click');
+const ab = viewSpan();
+const dtText = /^(\S+) (\S+)/.exec($('cur-dt').textContent);
+const dt = Number(dtText[1]) * UNITS[dtText[2]];
+check(near(ab, dt * 1.1), `A<->B shows the cursor span (${ab} vs ${dt})`);
+$('zoom-fit').dispatch('click');
+check(near(viewSpan(), s1), 'fit button');
 
 // A second capture without trigger replaces the first one
 trig.value = 'X';

@@ -126,6 +126,9 @@ button, .button {
 button:hover:not(:disabled), .button:hover:not(.disabled) { border-color: var(--muted); }
 button:disabled, .button.disabled { opacity: 0.4; cursor: default; pointer-events: none; }
 button svg { width: 14px; height: 14px; fill: currentColor; }
+button.icon { padding: 5px 8px; }
+button.icon svg { width: 15px; height: 15px; }
+.zoom { gap: 4px; }
 button.primary {
   background: var(--accent);
   border-color: var(--accent);

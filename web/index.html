@@ -80,6 +80,20 @@
       </button>
     </div>
 
+    <div class="group zoom" role="group" aria-label="Zoom">
+      <button id="zoom-in" class="icon" title="Zoom in (+, double-click)" aria-label="Zoom in">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 1a5.5 5.5 0 0 1 4.38 8.82l3.65 3.65-1.06 1.06-3.65-3.65A5.5 5.5 0 1 1 6.5 1zm0 1.5a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM5.75 4h1.5v1.75H9v1.5H7.25V9h-1.5V7.25H4v-1.5h1.75z"/></svg>
+      </button>
+      <button id="zoom-out" class="icon" title="Zoom out (-, right double-click)" aria-label="Zoom out">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 1a5.5 5.5 0 0 1 4.38 8.82l3.65 3.65-1.06 1.06-3.65-3.65A5.5 5.5 0 1 1 6.5 1zm0 1.5a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM4 5.75h5v1.5H4z"/></svg>
+      </button>
+      <button id="zoom-fit" title="Show the whole capture (F)">Fit</button>
+      <button id="zoom-ab" title="Zoom to the span between cursors A and B (Z)">A↔B</button>
+      <button id="zoom-back" title="Back to the previous view (Backspace)">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3 1.5 7.5 6 12V9h3.5a3 3 0 0 1 0 6H8v1.5h1.5a4.5 4.5 0 0 0 0-9H6z" transform="translate(0 -1.5)"/></svg>Back
+      </button>
+    </div>
+
     <div class="status">
       <span id="state" class="pill" data-state="offline">offline</span>
       <div class="progress" id="progress-wrap" hidden><div id="progress"></div></div>
@@ -117,7 +131,7 @@
     <span>Mouse <b id="cur-m">–</b></span>
     <span class="spacer"></span>
     <span id="view-info" class="hint"></span>
-    <span class="hint keys">wheel zoom · drag pan · click ruler A · shift+click B · F fit · T trigger · Esc clear</span>
+    <span class="hint keys">double-click zoom in · right double-click zoom out (Ctrl ×8) · drag pan · shift+click A · shift+right-click B · Z A↔B · Backspace back · F fit · T trigger · Esc clear</span>
   </footer>
 
   <div id="toast" class="toast" hidden></div>

@@ -62,9 +62,19 @@ In the UI, the **Channels** button opens a picker like PulseView's: tick channel
 one by one, or enable / disable *All*, *Changing*, *Non-changing* (whether the
 channel toggles in the current capture), *Named* or *Unnamed* (renamed from the
 default `CHn` or not). Hidden channels are ignored by the trigger and left out
-of VCD/CSV exports; all 8 are still captured. Mouse wheel zooms, dragging pans, a click places cursor A and
-Shift+click places cursor B. Keys: `F` fit, `T` jump to the trigger, `R` run,
-`S` stop, `Esc` clear the cursors.
+of VCD/CSV exports; all 8 are still captured.
+
+| Mouse / key | Action |
+|---|---|
+| left double-click / right double-click | zoom in / out ×2 around the pointer (Ctrl: ×8) |
+| left drag | pan |
+| Shift+left / Shift+right click | place cursor A / B (hold to drag it) |
+| drag a cursor line | move that cursor |
+| wheel | zoom (Shift+wheel pans) |
+| `+` `-` · `F` · `Z` · `Backspace` | zoom · fit · zoom to A↔B · previous view |
+| `T` · `R` · `S` · `Esc` | go to the trigger · run · stop · clear the cursors |
+
+The toolbar has the same zoom in / out, Fit, A↔B and Back buttons.
 
 Behind code-server, run the daemon in the container and open
 `https://<code-server>/proxy/8080/`. The UI uses only relative URLs, so it
