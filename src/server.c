@@ -12,6 +12,9 @@
  *       u32 id, u8 mode, u8 reserved, u16 width, u64 t0, u64 t1, payload
  *     mode 0: payload = raw samples [t0, t1)
  *     mode 1: payload = u16 per pixel, bit 2c = CH c high seen, 2c+1 = low seen
+ *   client -> server (text): {"type":"edges","id":N,"ch":C,"s":S}
+ *   server -> client (text): {"type":"edges","id":N,"ch":C,"s":S,"level":0|1,
+ *                             "pm":..,"p":..,"n":..,"nn":..}   (see ws_edges)
  *   server -> client (text): {"type":"status", ...} on every state change
  */
 #include "server.h"
@@ -382,6 +385,48 @@ static void ws_query(wp_server *s, struct mg_connection *conn, const char *js, s
     wp_store_unref(store);
 }
 
+/*
+ * {"type":"edges","id":n,"ch":c,"s":sample} -> the edges of channel c around
+ * sample s: p = start of the level containing s, n = next edge after s, pm =
+ * edge before p, nn = edge after n (-1 where there is none). Enough for the
+ * UI to measure the pulse / period under the mouse, snap cursors and step
+ * from edge to edge.
+ */
+static void ws_edges(wp_server *s, struct mg_connection *conn, const char *js, size_t len)
+{
+    double id = 0, ch = -1, at = -1;
+    wp_store *store;
+    char out[256];
+
+    wp_json_num(js, len, "id", &id);
+    if (wp_json_num(js, len, "ch", &ch) < 0 || wp_json_num(js, len, "s", &at) < 0 ||
+        ch < 0 || ch > 7 || at < 0) {
+        ws_send_text(conn, "{\"type\":\"error\",\"error\":\"edges needs ch 0..7 and s\"}");
+        return;
+    }
+    store = wp_engine_store(s->engine);
+    if (!store) {
+        snprintf(out, sizeof(out), "{\"type\":\"error\",\"id\":%.0f,\"error\":\"no capture\"}", id);
+        ws_send_text(conn, out);
+        return;
+    }
+    {
+        int c = (int)ch;
+        uint64_t x = (uint64_t)at < store->n ? (uint64_t)at : store->n - 1;
+        int64_t p = wp_store_prev_edge(store, c, x);
+        int64_t n = wp_store_next_edge(store, c, x);
+        int64_t pm = p > 0 ? wp_store_prev_edge(store, c, (uint64_t)p - 1) : -1;
+        int64_t nn = n >= 0 ? wp_store_next_edge(store, c, (uint64_t)n) : -1;
+        snprintf(out, sizeof(out),
+                 "{\"type\":\"edges\",\"id\":%.0f,\"ch\":%d,\"s\":%llu,\"level\":%d,"
+                 "\"pm\":%lld,\"p\":%lld,\"n\":%lld,\"nn\":%lld}",
+                 id, c, (unsigned long long)x, (store->raw[x] >> c) & 1,
+                 (long long)pm, (long long)p, (long long)n, (long long)nn);
+    }
+    wp_store_unref(store);
+    ws_send_text(conn, out);
+}
+
 static int ws_connect(const struct mg_connection *conn, void *cbdata)
 {
     wp_server *s = cbdata;
@@ -420,6 +465,8 @@ static int ws_data(struct mg_connection *conn, int bits, char *data, size_t len,
         return 1;
     if (strcmp(type, "query") == 0) {
         ws_query(s, conn, data, len);
+    } else if (strcmp(type, "edges") == 0) {
+        ws_edges(s, conn, data, len);
     } else if (strcmp(type, "status") == 0) {
         char st[1024];
         status_json(s, st, sizeof(st));

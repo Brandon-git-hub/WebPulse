@@ -306,6 +306,52 @@ check(near(ab, dt * 1.1), `A<->B shows the cursor span (${ab} vs ${dt})`);
 $('zoom-fit').dispatch('click');
 check(near(viewSpan(), s1), 'fit button');
 
+// Measurement of the pulse under the pointer: CH5 is a 250 kHz square wave
+const rowY = (c) => 30 + c * 44 + 22;
+const key = (k, extra = {}) => document.handlers.keydown.forEach((fn) => fn({ key: k, target: {}, preventDefault() {}, ...extra }));
+const tA = () => {
+  const m = /^(\S+) (\S+)/.exec($('cur-a').textContent);
+  return Number(m[1]) * UNITS[m[2]];
+};
+$('wave').dispatch('pointermove', { clientX: 600, clientY: rowY(5) });
+await sleep(150);
+const meas = $('measure')._html || '';
+check(!$('measure').hidden && meas.includes('Period</span> 4 µs') && meas.includes('Duty</span> 50.0 %') &&
+      meas.includes('250 kHz'), `CH5 measured (${meas.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')})`);
+check($('channels').children[5].classList.contains('active'), 'hovered channel highlighted');
+
+// Edge stepping moves cursor A by half a period (2 µs) on CH5. With the
+// cursors cleared, stepping starts from the centre of the view.
+key('Escape');
+key(']');
+await sleep(100);
+const e1 = tA();
+key(']');
+await sleep(100);
+check(Math.abs(tA() - e1 - 2e-6) < 1e-9, `] steps to the next edge (${e1} -> ${tA()})`);
+key('[');
+await sleep(100);
+check(Math.abs(tA() - e1) < 1e-9, `[ steps back (${tA()})`);
+for (let i = 0; i < 3; i++) {
+  key('}');
+  await sleep(100);
+}
+// B = A + 96 samples. Zoomed to A..B, A is ~54.5 px from the left at ~11.4 px
+// per sample, so x = 62 is 0.66 samples right of the edge: within snapping range.
+$('zoom-ab').dispatch('click');
+await sleep(150);
+$('wave').dispatch('pointermove', { clientX: 62, clientY: rowY(5) });
+await sleep(150);
+// Times are shown to 0.1 µs only, so compare the A-B distance in samples.
+const dtSmp = () => Number((/\((\d+) smp\)/.exec($('cur-dt').textContent) || [])[1]);
+click(62, { shiftKey: true });
+check(dtSmp() === 96, `shift+click snaps to the edge (A-B = ${dtSmp()} smp)`);
+$('wave').dispatch('pointerdown', { clientX: 62, clientY: rowY(5), button: 0, shiftKey: true, altKey: true });
+$('wave').dispatch('pointerup', { clientX: 62, clientY: rowY(5), button: 0, shiftKey: true, altKey: true });
+check(dtSmp() === 95, `alt disables snapping (A-B = ${dtSmp()} smp)`);
+$('zoom-fit').dispatch('click');
+
+
 // A second capture without trigger replaces the first one
 trig.value = 'X';
 trig.dispatch('change');

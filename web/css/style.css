@@ -377,6 +377,16 @@ kbd {
   margin-left: 4px;
 }
 .statusbar .spacer { flex: 1; }
+.edge-nav { display: inline-flex; align-items: center; gap: 3px; }
+button.mini { padding: 0 6px; font-size: 10px; line-height: 16px; }
+.measure { color: var(--text); font: 12px var(--mono); }
+.measure .ch-sw {
+  display: inline-block; width: 8px; height: 8px; border-radius: 2px;
+  background: var(--c); margin-right: 5px;
+}
+.measure .k { color: var(--muted); margin-left: 10px; }
+.ch.active { background: var(--panel-2); }
+.ch.active .idx { color: var(--text); }
 .sw {
   display: inline-block;
   width: 8px;

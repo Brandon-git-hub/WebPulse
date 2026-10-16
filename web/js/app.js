@@ -134,6 +134,159 @@ const query = {
   },
 };
 
+// ---- edges (measurements, snapping, edge stepping) ------------------------------------
+// Text request/response over the same WebSocket; ids are kept apart from the
+// binary queries' so error replies can be told apart.
+
+const edges = {
+  nextId: 1e9,
+  waiting: new Map(),       // id -> resolve
+  hover: { inflight: false, pending: null },
+
+  request(ch, s) {
+    if (!vp.capture || !app.ws || app.ws.readyState !== WebSocket.OPEN) return Promise.resolve(null);
+    const id = this.nextId++;
+    const key = app.capKey;
+    app.ws.send(JSON.stringify({ type: 'edges', id, ch, s: Math.max(0, Math.floor(s)) }));
+    // A reply for an earlier capture is dropped.
+    return new Promise((resolve) => this.waiting.set(id, (m) => resolve(m && app.capKey === key ? m : null)));
+  },
+
+  onMessage(m) {
+    const done = this.waiting.get(m.id);
+    if (!done) return false;
+    this.waiting.delete(m.id);
+    done(m.type === 'edges' ? m : null);
+    return true;
+  },
+
+  reset() {
+    for (const done of this.waiting.values()) done(null);
+    this.waiting.clear();
+    this.hover = { inflight: false, pending: null };
+  },
+};
+
+const SNAP_PX = 8;
+
+/** Highlight channel ch (the row under the pointer); null keeps the current one. */
+function setActive(ch) {
+  if (ch == null || ch === renderer.active) return;
+  renderer.active = ch;
+  renderer.measure = null;
+  channels.forEach((c, i) => c.row && c.row.classList.toggle('active', i === ch));
+  renderer.requestDraw();
+  updateMeasureReadout();
+}
+
+/** Measure the pulse of channel ch around sample s (at most one request in flight). */
+function measureAt(ch, s) {
+  const m = renderer.measure;
+  // Still inside the level already measured: nothing to ask.
+  if (m && m.ch === ch && s >= Math.max(m.p, 0) && (m.n < 0 || s < m.n)) return;
+  const h = edges.hover;
+  if (h.inflight) {
+    h.pending = { ch, s };
+    return;
+  }
+  h.inflight = true;
+  edges.request(ch, s).then((r) => {
+    if (edges.hover !== h) return;        // reset meanwhile
+    h.inflight = false;
+    if (r && r.ch === renderer.active) {
+      renderer.measure = r;
+      renderer.requestDraw();
+      updateMeasureReadout();
+    }
+    if (h.pending) {
+      const p = h.pending;
+      h.pending = null;
+      measureAt(p.ch, p.s);
+    }
+  });
+}
+
+/** High / low time, period, frequency and duty from an edges reply. */
+function measureValues(m) {
+  const width = m.p >= 0 && m.n >= 0 ? m.n - m.p : null;
+  const other = m.n >= 0 && m.nn >= 0 ? m.nn - m.n : m.pm >= 0 && m.p >= 0 ? m.p - m.pm : null;
+  const high = m.level ? width : other;
+  const low = m.level ? other : width;
+  const period = high != null && low != null ? high + low : null;
+  return { high, low, period };
+}
+
+function updateMeasureReadout() {
+  const el = $('measure');
+  const m = renderer.measure;
+  if (!vp.capture || !m || m.ch !== renderer.active) {
+    el.hidden = true;
+    return;
+  }
+  const ch = channels[m.ch];
+  const rate = vp.capture.rate;
+  const t = (n) => (n == null ? '–' : formatTime(n / rate, 4));
+  const head = `<span class="ch-sw" style="--c:${ch.color}"></span>${escapeHtml(ch.name)}`;
+  if (m.p < 0 && m.n < 0) {
+    el.innerHTML = `${head}<span class="k">constant ${m.level ? 'high' : 'low'}</span>`;
+  } else {
+    const v = measureValues(m);
+    const f = v.period ? formatFreq(rate / v.period) : '–';
+    const duty = v.period ? (100 * v.high / v.period).toFixed(1) + ' %' : '–';
+    el.innerHTML = `${head}<span class="k">High</span> ${t(v.high)}<span class="k">Low</span> ${t(v.low)}` +
+      `<span class="k">Period</span> ${t(v.period)}<span class="k">Freq</span> ${f}<span class="k">Duty</span> ${duty}`;
+  }
+  el.hidden = false;
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+/** Nearest edge of the measured pulse within SNAP_PX of x, else s itself. */
+function snapSample(s, x) {
+  const m = renderer.measure;
+  if (!m || m.ch !== renderer.active) return s;
+  let best = s, dist = SNAP_PX + 1;
+  for (const e of [m.pm, m.p, m.n, m.nn]) {
+    if (e < 0) continue;
+    const d = Math.abs(vp.xOf(e) - x);
+    if (d < dist) {
+      dist = d;
+      best = e;
+    }
+  }
+  return dist <= SNAP_PX ? best : s;
+}
+
+/** Move cursor k to the previous (dir < 0) or next edge of the highlighted channel. */
+async function stepEdge(k, dir) {
+  if (!vp.capture) return;
+  if (renderer.active == null || !channels[renderer.active].enabled) {
+    setActive(channels.findIndex((c) => c.enabled));
+  }
+  const ch = renderer.active;
+  const cur = renderer.cursors[k];
+  const from = cur != null ? Math.min(cur, vp.capture.n - 1) : Math.round(vp.sampleAt(vp.width / 2));
+  const m = await edges.request(ch, from);
+  if (!m) return;
+  // p is the edge at or before from; when the cursor sits on it, step past it.
+  const to = dir > 0 ? m.n : m.p >= 0 && m.p < m.s ? m.p : m.pm;
+  if (to < 0) {
+    toast(`No ${dir > 0 ? 'later' : 'earlier'} edge on ${channels[ch].name}`, 'info');
+    return;
+  }
+  renderer.cursors[k] = to;
+  const x = vp.xOf(to);
+  if (x < 0 || x > vp.width) {
+    vp.save();
+    vp.centreOn(to);
+  }
+  renderer.requestDraw();
+  updateCursorReadout();
+  measureAt(ch, to);
+}
+
 vp.onChange(() => {
   renderer.requestDraw();
   query.request();
@@ -449,6 +602,9 @@ function onStatus(st) {
     vp.capture = null;
     query.reset();
     renderer.clearData();
+    edges.reset();
+    renderer.measure = null;
+    updateMeasureReadout();
     renderer.cursors = { a: null, b: null };
     $('empty').hidden = false;
     updateExportLinks();
@@ -474,6 +630,9 @@ function showCapture(cap) {
   api('api/device').then((d) => { app.device = d; showDevice(d); }).catch(() => {});
   query.reset();
   renderer.clearData();
+  edges.reset();
+  renderer.measure = null;
+  updateMeasureReadout();
   renderer.cursors = { a: null, b: null };
   $('empty').hidden = true;
   vp.setCapture({ n: cap.n, rate: cap.rate, trigger_pos: cap.trigger_pos });
@@ -500,13 +659,15 @@ function connect() {
       let msg;
       try { msg = JSON.parse(ev.data); } catch { return; }
       if (msg.type === 'status') onStatus(msg);
-      else if (msg.type === 'error' && msg.error !== 'no capture') toast(msg.error);
+      else if (msg.type === 'edges') edges.onMessage(msg);
+      else if (msg.type === 'error' && !edges.onMessage(msg) && msg.error !== 'no capture') toast(msg.error);
     } else {
       query.onResponse(ev.data);
     }
   };
   ws.onclose = () => {
     app.ws = null;
+    edges.reset();
     $('state').dataset.state = 'offline';
     $('state').textContent = 'offline';
     $('state-detail').textContent = 'reconnecting…';
@@ -534,9 +695,10 @@ function cursorNear(x) {
   return null;
 }
 
-function setCursor(k, x) {
+function setCursor(k, x, snap = false) {
   if (!vp.capture) return;
-  const s = Math.round(vp.sampleAt(x));
+  let s = Math.round(vp.sampleAt(x));
+  if (snap) s = snapSample(s, x);
   renderer.cursors[k] = Math.min(Math.max(s, 0), vp.capture.n);
   renderer.requestDraw();
   updateCursorReadout();
@@ -566,7 +728,7 @@ canvas.addEventListener('pointerdown', (ev) => {
   drag.moved = false;
   if (ev.shiftKey) {
     const k = ev.button === 0 ? 'a' : 'b';
-    setCursor(k, x);
+    setCursor(k, x, !ev.altKey);
     drag.mode = 'cursor-' + k;      // keep the button down to drag it
   } else if (near && ev.button === 0) {
     drag.mode = 'cursor-' + near;
@@ -578,8 +740,12 @@ canvas.addEventListener('pointerdown', (ev) => {
 });
 
 canvas.addEventListener('pointermove', (ev) => {
-  const { x } = localX(ev);
+  const { x, y } = localX(ev);
   renderer.hoverX = vp.capture ? x : null;
+  if (vp.capture) {
+    setActive(renderer.channelAt(y));
+    if (renderer.active != null) measureAt(renderer.active, vp.sampleAt(x));
+  }
   if (drag.active) {
     if (Math.abs(x - drag.x0) > CLICK_PX) drag.moved = true;
     if (drag.mode === 'pan' && drag.moved) {
@@ -591,7 +757,7 @@ canvas.addEventListener('pointermove', (ev) => {
       vp.panPx(x - drag.last);
       updateZoomButtons();
     } else if (drag.mode.startsWith('cursor-') && drag.moved) {
-      setCursor(drag.mode.slice(-1), x);
+      setCursor(drag.mode.slice(-1), x, !ev.altKey);
     }
     drag.last = x;
   } else {
@@ -684,6 +850,8 @@ $('zoom-out').addEventListener('click', () => zoomBy(vp.width / 2, 2));
 $('zoom-fit').addEventListener('click', fitView);
 $('zoom-ab').addEventListener('click', zoomToCursors);
 $('zoom-back').addEventListener('click', goBack);
+$('edge-prev').addEventListener('click', (ev) => stepEdge(ev.shiftKey ? 'b' : 'a', -1));
+$('edge-next').addEventListener('click', (ev) => stepEdge(ev.shiftKey ? 'b' : 'a', 1));
 
 document.addEventListener('keydown', (ev) => {
   const tag = (ev.target && ev.target.tagName) || '';
@@ -698,6 +866,9 @@ document.addEventListener('keydown', (ev) => {
       break;
     case 'f': case 'F':
       fitView();
+      break;
+    case '[': case ']': case '{': case '}':
+      stepEdge('[]'.includes(ev.key) ? 'a' : 'b', '[{'.includes(ev.key) ? -1 : 1);
       break;
     case 'z': case 'Z':
       zoomToCursors();
@@ -725,7 +896,7 @@ document.addEventListener('keydown', (ev) => {
       vp.panPx(-W * 0.25);
       break;
     case 'a': case 'A': case 'b': case 'B':
-      if (renderer.hoverX != null) setCursor(ev.key.toLowerCase(), renderer.hoverX);
+      if (renderer.hoverX != null) setCursor(ev.key.toLowerCase(), renderer.hoverX, !ev.altKey);
       break;
     case 'Escape':
       if (!$('channels-pop').hidden) {

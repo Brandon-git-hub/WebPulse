@@ -68,13 +68,19 @@ of VCD/CSV exports; all 8 are still captured.
 |---|---|
 | left double-click / right double-click | zoom in / out ×2 around the pointer (Ctrl: ×8) |
 | left drag | pan |
-| Shift+left / Shift+right click | place cursor A / B (hold to drag it) |
+| Shift+left / Shift+right click | place cursor A / B (hold to drag it); snaps to an edge within 8 px, Alt: no snapping |
+| `[` `]` / `{` `}` | move cursor A / B to the previous / next edge of the highlighted channel |
 | drag a cursor line | move that cursor |
 | wheel | zoom (Shift+wheel pans) |
 | `+` `-` · `F` · `Z` · `Backspace` | zoom · fit · zoom to A↔B · previous view |
 | `T` · `R` · `S` · `Esc` | go to the trigger · run · stop · clear the cursors |
 
 The toolbar has the same zoom in / out, Fit, A↔B and Back buttons.
+
+The channel row under the pointer is highlighted and measured: the status bar
+shows the high and low time, period, frequency and duty cycle of the pulse
+under the pointer, and the pulse is marked on the canvas. The Edge ◀ ▶ buttons
+in the status bar step cursor A (Shift: B) like `[` / `]`.
 
 Behind code-server, run the daemon in the container and open
 `https://<code-server>/proxy/8080/`. The UI uses only relative URLs, so it
@@ -112,6 +118,12 @@ u32 id | u8 mode | u8 0 | u16 width | u64 t0 | u64 t1 | payload
 mode 0: raw samples t0..t1 (1 byte per sample, bit c = CH c)
 mode 1: u16 per pixel, bit 2c = CH c was high, bit 2c+1 = CH c was low
 ```
+
+`{"type":"edges","id":7,"ch":5,"s":1000}` returns the edges of CH5 around sample
+1000 as text: `{"type":"edges","id":7,"ch":5,"s":1000,"level":0,"pm":912,"p":960,"n":1008,"nn":1056}`.
+`p` is where the current level started, `n` the next edge, `pm` / `nn` the
+edges before / after those (-1 if none). The search skips constant stretches
+through the summary pyramid, so it is fast on any capture length.
 
 ## Tests
 

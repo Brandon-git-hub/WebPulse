@@ -14,6 +14,8 @@ export const CHANNELS = 8;
 const COLORS = {
   bg: '#0f1216',
   rowAlt: '#12161b',
+  rowActive: 'rgba(255,255,255,0.035)',
+  measure: 'rgba(215,221,229,0.75)',
   ruler: '#161a20',
   grid: '#1f252d',
   gridStrong: '#2a313b',
@@ -34,6 +36,8 @@ export class Renderer {
     this.data = null;           // last query response
     this.cursors = { a: null, b: null };
     this.hoverX = null;
+    this.active = null;         // highlighted channel (pointer row)
+    this.measure = null;        // { ch, level, pm, p, n, nn } from the server
     this.dpr = 1;
     this.cssW = 0;
     this.rows = [];             // [{ top, h }] per channel
@@ -109,6 +113,10 @@ export class Renderer {
         ctx.fillStyle = COLORS.rowAlt;
         ctx.fillRect(0, top, W, h);
       }
+      if (c === this.active) {
+        ctx.fillStyle = COLORS.rowActive;
+        ctx.fillRect(0, top, W, h);
+      }
     }
 
     const cap = this.vp.capture;
@@ -117,6 +125,7 @@ export class Renderer {
       const ticks = this.ticks(W);
       this.drawGrid(ticks, H);
       this.drawWaves(W);
+      this.drawMeasure(W);
       this.drawTrigger(H);
       this.drawRuler(ticks, W);
       this.drawCursors(H);
@@ -335,6 +344,44 @@ export class Renderer {
       }
       ctx.stroke();
     }
+  }
+
+  /** Channel row at css y, or null (ruler / below the rows). */
+  channelAt(y) {
+    for (let c = 0; c < CHANNELS; c++) {
+      const { top, h } = this.rows[c];
+      if (h && y >= top && y < top + h) return c;
+    }
+    return null;
+  }
+
+  /** Mark the pulse under the pointer: its span and the following level. */
+  drawMeasure(W) {
+    const m = this.measure;
+    if (!m || m.ch !== this.active || !this.channels[m.ch].enabled) return;
+    const { ctx, vp } = this;
+    const { top, h } = this.rows[m.ch];
+    const y = top + h / 2 + 0.5;
+    const seg = (a, b, alpha) => {
+      if (a < 0 || b < 0) return;
+      const x0 = vp.xOf(a), x1 = vp.xOf(b);
+      if (x1 < 0 || x0 > W || x1 - x0 < 6) return;
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.moveTo(x0 + 1, y);
+      ctx.lineTo(x1 - 1, y);
+      // arrow heads
+      ctx.moveTo(x0 + 5, y - 3); ctx.lineTo(x0 + 1, y); ctx.lineTo(x0 + 5, y + 3);
+      ctx.moveTo(x1 - 5, y - 3); ctx.lineTo(x1 - 1, y); ctx.lineTo(x1 - 5, y + 3);
+      ctx.stroke();
+    };
+    ctx.save();
+    ctx.strokeStyle = COLORS.measure;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([]);
+    seg(m.p, m.n, 1);
+    seg(m.n, m.nn, 0.4);
+    ctx.restore();
   }
 
   drawTrigger(H) {

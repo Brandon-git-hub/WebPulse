@@ -59,4 +59,14 @@ size_t wp_store_query(const wp_store *s, uint64_t t0, uint64_t t1, uint32_t widt
 /* Worst-case payload size for a query of the given width. */
 size_t wp_store_query_max(uint32_t width);
 
+/*
+ * Edges of channel ch. An edge "at i" means sample i differs from sample i-1,
+ * i.e. i is the first sample of the new level.
+ *   next: smallest i > from with an edge at i
+ *   prev: largest i <= from with an edge at i (start of the level containing from)
+ * Both return -1 if there is none. Uses the mipmap to skip constant blocks.
+ */
+int64_t wp_store_next_edge(const wp_store *s, int ch, uint64_t from);
+int64_t wp_store_prev_edge(const wp_store *s, int ch, uint64_t from);
+
 #endif

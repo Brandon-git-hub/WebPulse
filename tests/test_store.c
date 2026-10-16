@@ -92,6 +92,35 @@ int main(void)
             CHECK(v == exp);
         }
     }
+    /* Edge search == brute force, including from at / next to an edge */
+    for (round = 0; round < 3000; round++) {
+        int ch;
+        uint64_t from;
+        int64_t want_n = -1, want_p = -1, j;
+        seed = seed * 1103515245u + 12345u;
+        ch = (int)((seed >> 8) & 7);
+        seed = seed * 1103515245u + 12345u;
+        from = round < 20 ? (round < 10 ? (uint64_t)round : N - 1 - (uint64_t)(round - 10))
+                          : (seed >> 4) % N;
+        for (j = (int64_t)from + 1; j < (int64_t)N; j++)
+            if (((copy[j] ^ copy[j - 1]) >> ch) & 1) {
+                want_n = j;
+                break;
+            }
+        for (j = (int64_t)from; j > 0; j--)
+            if (((copy[j] ^ copy[j - 1]) >> ch) & 1) {
+                want_p = j;
+                break;
+            }
+        CHECK_EQ_U(wp_store_next_edge(s, ch, from), want_n);
+        CHECK_EQ_U(wp_store_prev_edge(s, ch, from), want_p);
+        if (want_n > 0) {
+            /* Starting exactly on an edge */
+            CHECK_EQ_U(wp_store_prev_edge(s, ch, (uint64_t)want_n), want_n);
+            CHECK_EQ_U(wp_store_prev_edge(s, ch, (uint64_t)want_n - 1), want_p);
+        }
+    }
+
     wp_store_unref(s);
     free(copy);
     TEST_DONE();

@@ -129,9 +129,15 @@
     <span>Δt <b id="cur-dt">–</b></span>
     <span>1/Δt <b id="cur-f">–</b></span>
     <span>Mouse <b id="cur-m">–</b></span>
+    <span class="edge-nav" title="Move cursor A to the previous / next edge of the highlighted channel ([ / ], Shift: cursor B)">
+      Edge
+      <button id="edge-prev" class="mini" aria-label="Cursor A to previous edge">◀</button>
+      <button id="edge-next" class="mini" aria-label="Cursor A to next edge">▶</button>
+    </span>
+    <span id="measure" class="measure" hidden></span>
     <span class="spacer"></span>
     <span id="view-info" class="hint"></span>
-    <span class="hint keys">double-click zoom in · right double-click zoom out (Ctrl ×8) · drag pan · shift+click A · shift+right-click B · Z A↔B · Backspace back · F fit · T trigger · Esc clear</span>
+    <span class="hint keys">double-click zoom in · right double-click zoom out (Ctrl ×8) · drag pan · shift+click A · shift+right-click B (Alt: no snap) · [ ] edge · Z A↔B · Backspace back · F fit · T trigger · Esc clear</span>
   </footer>
 
   <div id="toast" class="toast" hidden></div>

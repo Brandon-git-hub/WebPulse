@@ -131,6 +131,70 @@ void wp_store_range(const wp_store *s, uint64_t a, uint64_t b,
     *and_out = an;
 }
 
+/* Does block idx of level k contain a sample whose bit differs from level L? */
+static int block_differs(const wp_store *s, int k, uint64_t idx, uint8_t bit, int L)
+{
+    const uint8_t *p = s->lv[k].d + 2 * idx;
+    return L ? !(p[1] & bit) : (p[0] & bit) != 0;
+}
+
+int64_t wp_store_next_edge(const wp_store *s, int ch, uint64_t from)
+{
+    const uint8_t bit = (uint8_t)(1u << ch);
+    uint64_t pos;
+    int L;
+
+    if (from + 1 >= s->n)
+        return -1;
+    L = (s->raw[from] & bit) != 0;
+    pos = from + 1;
+    while (pos < s->n) {
+        int k = s->nlevels - 1;
+        /* Largest block starting at pos, then descend while it has a change. */
+        while (k >= 0 && pos % s->lv[k].block)
+            k--;
+        while (k >= 0 && block_differs(s, k, pos / s->lv[k].block, bit, L))
+            k--;
+        if (k >= 0) {
+            pos += s->lv[k].block;      /* whole block is still at level L */
+            continue;
+        }
+        if (((s->raw[pos] & bit) != 0) != L)
+            return (int64_t)pos;
+        pos++;
+    }
+    return -1;
+}
+
+int64_t wp_store_prev_edge(const wp_store *s, int ch, uint64_t from)
+{
+    const uint8_t bit = (uint8_t)(1u << ch);
+    uint64_t end;           /* search samples < end for one that differs */
+    int L;
+
+    if (from >= s->n)
+        return -1;
+    L = (s->raw[from] & bit) != 0;
+    end = from;
+    while (end > 0) {
+        int k = s->nlevels - 1;
+        /* Largest block ending at end-1 (the last block may be partial only
+         * at the end of the capture, which is never below from). */
+        while (k >= 0 && end % s->lv[k].block)
+            k--;
+        while (k >= 0 && block_differs(s, k, end / s->lv[k].block - 1, bit, L))
+            k--;
+        if (k >= 0) {
+            end -= s->lv[k].block;
+            continue;
+        }
+        if (((s->raw[end - 1] & bit) != 0) != L)
+            return (int64_t)end;
+        end--;
+    }
+    return -1;
+}
+
 size_t wp_store_query_max(uint32_t width)
 {
     /* raw: at most width samples; summary: 2 bytes per pixel */
