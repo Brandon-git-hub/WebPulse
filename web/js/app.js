@@ -903,6 +903,7 @@ async function stopCapture() {
 
 function updateExportLinks() {
   const has = !!vp.capture;
+  $('export-png').disabled = !has;
   const names = encodeURIComponent(channels.map((c) => c.name.replace(/,/g, '_')).join(','));
   const on = channels.flatMap((c, i) => (c.enabled ? [i] : []));
   const sel = on.length === CHANNELS ? '' : `&channels=${on.join(',')}`;
@@ -1305,6 +1306,98 @@ function updateCursorReadout() {
   }
 }
 
+// ---- PNG snapshot ---------------------------------------------------------------------
+// The current view as an image: channel / decoder names, the waveform canvas
+// as drawn, and a line with the capture and cursor details.
+
+const PNG_LABEL_W = 180, PNG_FOOT_H = 26;
+
+function snapshotCanvas() {
+  const dpr = renderer.dpr;
+  const W = renderer.cssW, H = renderer.cssH;
+  const out = document.createElement('canvas');
+  out.width = Math.round((PNG_LABEL_W + W) * dpr);
+  out.height = Math.round((H + PNG_FOOT_H) * dpr);
+  const ctx = out.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const css = getComputedStyle(document.documentElement);
+  const v = (name) => css.getPropertyValue(name).trim();
+
+  ctx.fillStyle = v('--panel');
+  ctx.fillRect(0, 0, PNG_LABEL_W + W, H + PNG_FOOT_H);
+  // Without the pointer's row highlight, hover line and pulse marks.
+  const keep = { active: renderer.active, hoverX: renderer.hoverX };
+  renderer.active = renderer.hoverX = null;
+  renderer.draw();
+  ctx.drawImage(canvas, PNG_LABEL_W, 0, W, H);
+  Object.assign(renderer, keep);
+  renderer.requestDraw();
+  ctx.strokeStyle = v('--border');
+  ctx.beginPath();
+  ctx.moveTo(PNG_LABEL_W - 0.5, 0);
+  ctx.lineTo(PNG_LABEL_W - 0.5, H + PNG_FOOT_H);
+  ctx.moveTo(0, H + 0.5);
+  ctx.lineTo(PNG_LABEL_W + W, H + 0.5);
+  ctx.stroke();
+
+  const label = (y, h, color, text, sub) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(0, y, 4, h);
+    ctx.fillStyle = v('--text');
+    ctx.font = `${sub ? 12 : 13}px ${v('--sans') || 'sans-serif'}`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    let t = text;
+    while (t.length > 1 && ctx.measureText(t).width > PNG_LABEL_W - 20) t = t.slice(0, -2) + '…';
+    ctx.fillText(t, 12, y + h / 2);
+  };
+  ctx.fillStyle = v('--muted');
+  ctx.font = `11px ${v('--sans') || 'sans-serif'}`;
+  ctx.textBaseline = 'middle';
+  ctx.fillText('WebPulse', 12, RULER_H / 2);
+  for (const c of order) {
+    const { top, h } = renderer.rows[c];
+    if (h) label(top, h, channels[c].color, channels[c].name === `CH${c}` ? `CH${c}` : `${c}  ${channels[c].name}`);
+  }
+  for (const r of renderer.decRows) label(r.top, DEC_ROW_H, r.color, r.label, true);
+
+  // Footer: rate, samples, view, cursors.
+  const cap = vp.capture;
+  const parts = [`${formatSI(cap.n)} samples @ ${formatRate(cap.rate)}`, $('view-info').textContent];
+  const { a, b } = renderer.cursors;
+  if (a != null) parts.push(`A ${$('cur-a').textContent}`);
+  if (b != null) parts.push(`B ${$('cur-b').textContent}`);
+  if (a != null && b != null) parts.push(`Δt ${$('cur-dt').textContent}`, `1/Δt ${$('cur-f').textContent}`);
+  parts.push(new Date().toLocaleString());
+  ctx.fillStyle = v('--muted');
+  ctx.font = `12px ${v('--mono') || 'monospace'}`;
+  ctx.fillText(parts.filter(Boolean).join('   ·   '), 12, H + PNG_FOOT_H / 2 + 1);
+  return out;
+}
+
+function exportPng() {
+  if (!vp.capture) return;
+  const out = snapshotCanvas();
+  const d = new Date();
+  const p2 = (n) => String(n).padStart(2, '0');
+  const name = `webpulse-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-` +
+    `${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}.png`;
+  out.toBlob((blob) => {
+    if (!blob) {
+      toast('Could not create the image');
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }, 'image/png');
+}
+
 function updateViewInfo() {
   const el = $('view-info');
   if (!vp.capture) {
@@ -1344,6 +1437,7 @@ async function init() {
   $('pre').addEventListener('change', saveSettings);
   $('timeout').addEventListener('change', saveSettings);
   $('run').addEventListener('click', toggleRun);
+  $('export-png').addEventListener('click', exportPng);
   $('theme').addEventListener('click', cycleTheme);
   matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => applyTheme());
   applyTheme();

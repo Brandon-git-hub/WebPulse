@@ -89,12 +89,16 @@ class FakeElement {
   setPointerCapture() {}
   releasePointerCapture() {}
   getContext() { return ctxProxy; }
+  toBlob(cb, type) { this.blobType = type; cb(new Blob(['png'], { type })); }
+  click() { this.clicked = true; document.lastClicked = this; }
+  remove() {}
   set innerHTML(v) { this._html = v; }
 }
 
 const elements = {};
 const document = {
   documentElement: new FakeElement('html'),
+  body: new FakeElement('body'),
   getElementById(id) { return (elements[id] ||= new FakeElement(id === 'wave' ? 'canvas' : 'div', id)); },
   createElement(tag) {
     const el = new FakeElement(tag);
@@ -446,6 +450,17 @@ check($('run').dataset.mode === 'run' && !$('run').disabled, 'Run button back to
   check(JSON.parse(store['webpulse.settings.v1']).order.join('') === '01723456', 'order saved');
   $('order-reset').dispatch('click');
   check(shown() === '01234567', `reset order (${shown()})`);
+}
+
+// PNG snapshot of the view
+{
+  check(!$('export-png').disabled, 'PNG export enabled with a capture');
+  drawCalls = 0;
+  $('export-png').dispatch('click');
+  const a = document.lastClicked;
+  check(a && /^webpulse-\d{8}-\d{6}\.png$/.test(a.download) && a.href.startsWith('blob:'),
+    `PNG download (${a && a.download})`);
+  check(drawCalls > 0, 'PNG labels drawn');
 }
 
 // Theme: auto -> light -> dark; default colours follow, a picked colour stays
