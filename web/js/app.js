@@ -1,6 +1,6 @@
 // WebPulse UI: toolbar, channel list, WebSocket client and canvas interaction.
 // All URLs are relative so the page also works behind a path prefix such as
-// code-server's /proxy/8080/.
+// code-server's /proxy/9002/.
 
 import { formatFreq, formatRate, formatSI, formatTime, parseSI } from './format.js';
 import { CHANNELS, RULER_H, ROW_H, Renderer } from './renderer.js';

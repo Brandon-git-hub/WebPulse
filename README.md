@@ -18,15 +18,39 @@ FX2 board ──USB──▶ webpulse (C: libusb + CivetWeb) ──HTTP/WebSocke
 - A simulator backend, so all of it can be developed and tested without
   hardware.
 
+## Download
+
+Prebuilt packages are on the GitHub releases page:
+
+- `webpulse-<version>-win64.zip`: Windows 10/11 x64, one `webpulse.exe` with
+  no DLLs to install
+- `webpulse-<version>-linux-x86_64.tar.gz`: Linux x86_64, statically linked
+  libusb, glibc 2.35 or newer
+
+Unpack and keep the `firmware/` folder next to the executable.
+
 ## Build
 
-Linux (development, tests, simulator only unless libusb-1.0 is installed):
+Linux (development and tests; the FX2 backend is built when pkg-config finds
+libusb-1.0, otherwise only the simulator):
 
 ```bash
 cmake -S . -B build/linux -G Ninja
 cmake --build build/linux
 ctest --test-dir build/linux
 ```
+
+A libusb without udev is enough, and also works in a container. To build one
+statically:
+
+```bash
+./configure --prefix=$HOME/libusb-linux --disable-udev --enable-static --disable-shared CFLAGS="-O2 -fPIC"
+make install
+export PKG_CONFIG_PATH=$HOME/libusb-linux/lib/pkgconfig
+```
+
+If `PKG_CONFIG_PATH` also lists the MinGW sysroot, put the Linux directory
+first. Both hold a `libusb-1.0.pc`, and pkg-config uses the first one it finds.
 
 Windows (cross-compiled from Linux with llvm-mingw, toolchain under `/mnt/ssd/tools`):
 
@@ -41,7 +65,7 @@ Copy `webpulse.exe` together with the `firmware/` folder next to it.
 ## Run
 
 ```bash
-webpulse                         # fx2 backend, UI on http://127.0.0.1:8080/
+webpulse                         # fx2 backend, UI on http://127.0.0.1:9002/
 webpulse --listen 0.0.0.0        # allow remote browsers (open the firewall port)
 webpulse -b sim                  # simulator, no hardware needed
 webpulse -b sim -w web           # serve web/ from disk while editing the UI
@@ -83,7 +107,7 @@ under the pointer, and the pulse is marked on the canvas. The Edge ◀ ▶ butto
 in the status bar step cursor A (Shift: B) like `[` / `]`.
 
 Behind code-server, run the daemon in the container and open
-`https://<code-server>/proxy/8080/`. The UI uses only relative URLs, so it
+`https://<code-server>/proxy/9002/`. The UI uses only relative URLs, so it
 works under that path prefix.
 
 ## Windows setup (first time)
@@ -93,11 +117,35 @@ works under that path prefix.
 2. With [Zadig](https://zadig.akeo.ie/), install **WinUSB** for that device. When
    WebPulse uploads the firmware, the board reconnects as `0925:3881`. If Zadig
    then shows that ID without WinUSB, install WinUSB for it as well.
-3. Run `webpulse.exe`, then open http://127.0.0.1:8080/.
+3. Run `webpulse.exe`, then open http://127.0.0.1:9002/.
 
 When WebPulse opens the board (at start-up, or on the next Run if the board was
 plugged in later), it uploads `firmware/fx2lafw-saleae-logic.fw` to the board's
 RAM, which takes about 1–2 s.
+
+## Linux setup (first time)
+
+Give users access to the board with a udev rule, for example
+`/etc/udev/rules.d/60-webpulse.rules`:
+
+```
+SUBSYSTEM=="usb", ATTR{idVendor}=="0925", ATTR{idProduct}=="3881", MODE="0666"
+SUBSYSTEM=="usb", ATTR{idVendor}=="04b4", ATTR{idProduct}=="8613", MODE="0666"
+```
+
+Then run `sudo udevadm control --reload && sudo udevadm trigger` and replug the
+board.
+
+**In a Docker container**, mount the whole USB tree rather than a single device
+node, because the board comes back with a new device number after the
+firmware upload:
+
+```
+-v /dev/bus/usb:/dev/bus/usb --device-cgroup-rule='c 189:* rmw'
+```
+
+The udev rule goes on the host. The container needs no udev: WebPulse polls for
+the board after uploading the firmware.
 
 ## HTTP / WebSocket API
 
@@ -152,6 +200,11 @@ third_party/civetweb/   CivetWeb 1.16 (MIT)
 ## Licenses
 
 WebPulse is released under the MIT License (see `LICENSE`).
+
+- libusb is LGPL-2.1 and is linked statically into the release executables.
+  Its source is at https://github.com/libusb/libusb (the release builds use
+  1.0.30). To use a modified libusb, rebuild WebPulse from this source against
+  it, as described under Build.
 
 - `third_party/civetweb/`: CivetWeb, MIT (`third_party/civetweb/LICENSE.md`).
 - `firmware/`: the fx2lafw firmware is GPLv2+ and is shipped as a separate file

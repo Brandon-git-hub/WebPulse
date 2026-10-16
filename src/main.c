@@ -64,7 +64,7 @@ static void usage(FILE *f)
         "Server:\n"
         "  -b, --backend sim|fx2    device backend (default: %s)\n"
         "  -l, --listen ADDR        bind address (default 127.0.0.1, 0.0.0.0 = all)\n"
-        "  -p, --port N             HTTP port (default 8080)\n"
+        "  -p, --port N             HTTP port (default 9002)\n"
         "  -w, --web-root DIR       serve the UI from DIR instead of the embedded copy\n"
         "  -f, --firmware PATH      fx2lafw firmware image\n"
         "                           (default: firmware/fx2lafw-saleae-logic.fw next to the exe)\n"
@@ -362,7 +362,7 @@ int main(int argc, char **argv)
 #endif
     o.channels = WP_ALL_CHANNELS;
     o.listen = "127.0.0.1";
-    o.port = 8080;
+    o.port = 9002;
     o.sim_speed = 1.0;
     o.max_samples = 256000000ull;
     o.rate = 24000000;
