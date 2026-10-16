@@ -351,7 +351,7 @@ int main(int argc, char **argv)
     options o;
     wp_device *dev;
     wp_engine *e;
-    char err[256], fw_path[1024];
+    char err[512], fw_path[1024];
     int rc;
 
     memset(&o, 0, sizeof(o));

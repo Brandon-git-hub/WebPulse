@@ -25,6 +25,7 @@
 
 #include "civetweb.h"
 
+#include <errno.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -523,6 +524,45 @@ static void *status_main(void *arg)
 
 /* ---- lifecycle ------------------------------------------------------------ */
 
+/* CivetWeb reports why it could not listen (e.g. "cannot bind to
+ * 127.0.0.1:9002: 10013 (...)") only through its log callback, followed by a
+ * generic "Failed to setup server ports"; keep the bind message so start-up
+ * errors can say what went wrong. */
+static char bind_log[256];
+
+static int log_cb(const struct mg_connection *conn, const char *msg)
+{
+    (void)conn;
+    if (strstr(msg, "cannot bind") && !bind_log[0])
+        wp_strlcpy(bind_log, msg, sizeof(bind_log));
+    return 1;       /* handled: CivetWeb has no log file configured anyway */
+}
+
+/* A hint for the common bind errors. */
+static const char *bind_hint(const char *msg)
+{
+    const char *p = strstr(msg, "cannot bind");
+    long code;
+    /* "cannot bind to 127.0.0.1:9002: 10013 (...)": the code follows ": " */
+    if (!p || !(p = strstr(p, ": ")))
+        return "";
+    code = strtol(p + 2, NULL, 10);
+#ifdef _WIN32
+    if (code == 10013)      /* WSAEACCES */
+        return " - Windows has reserved this port (Hyper-V / WSL / Docker reserve port "
+               "ranges; see \"netsh interface ipv4 show excludedportrange protocol=tcp\"). "
+               "Choose another one with -p PORT";
+    if (code == 10048)      /* WSAEADDRINUSE */
+        return " - another program is already using this port; choose another one with -p PORT";
+#else
+    if (code == EADDRINUSE)
+        return " - another program is already using this port; choose another one with -p PORT";
+    if (code == EACCES)
+        return " - not allowed to use this port; choose one above 1023 with -p PORT";
+#endif
+    return "";
+}
+
 wp_server *wp_server_start(wp_engine *e, const wp_server_opts *o, char *err, size_t errlen)
 {
     wp_server *s = calloc(1, sizeof(*s));
@@ -563,6 +603,7 @@ wp_server *wp_server_start(wp_engine *e, const wp_server_opts *o, char *err, siz
     opts[n] = NULL;
 
     memset(&cb, 0, sizeof(cb));
+    cb.log_message = log_cb;
     memset(&init, 0, sizeof(init));
     init.callbacks = &cb;
     init.user_data = s;
@@ -574,8 +615,12 @@ wp_server *wp_server_start(wp_engine *e, const wp_server_opts *o, char *err, siz
     mg_init_library(0);
     s->ctx = mg_start2(&init, &errd);
     if (!s->ctx) {
-        snprintf(err, errlen, "cannot start HTTP server on %s: %s", ports,
-                 errbuf[0] ? errbuf : "unknown error");
+        if (bind_log[0])
+            snprintf(err, errlen, "cannot start HTTP server: %s%s", bind_log,
+                     bind_hint(bind_log));
+        else
+            snprintf(err, errlen, "cannot start HTTP server on %s: %s", ports,
+                     errbuf[0] ? errbuf : "unknown error");
         mg_exit_library();
         pthread_mutex_destroy(&s->ws_lock);
         free(s);
