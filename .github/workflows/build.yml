@@ -74,12 +74,14 @@ jobs:
           path: dist/*
 
   windows:
-    runs-on: ubuntu-22.04     # cross-compiled with llvm-mingw
+    # Cross-compiled with llvm-mingw. 24.04 for its 7-Zip 23.01: the libusb .7z
+    # uses methods (e.g. the ARM64 filter) that 22.04's p7zip 16.02 cannot read.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
       - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y ninja-build p7zip-full pkg-config
+        run: sudo apt-get update && sudo apt-get install -y ninja-build 7zip pkg-config
 
       - name: Set up toolchain (same layout as /mnt/ssd/tools)
         run: |
@@ -94,7 +96,7 @@ jobs:
           curl -fsSL -o libusb.7z \
             https://github.com/libusb/libusb/releases/download/v$LIBUSB_VERSION/libusb-$LIBUSB_VERSION.7z
           echo "$LIBUSB_WIN_SHA256  libusb.7z" | sha256sum -c
-          7z x -olibusb-win libusb.7z > /dev/null
+          7zz x -olibusb-win libusb.7z > /dev/null
           S="$T/mingw-w64/current/x86_64-w64-mingw32"
           mkdir -p "$S/include/libusb-1.0" "$S/lib/pkgconfig"
           cp "$(find libusb-win -path '*/include/libusb.h' | head -1)" "$S/include/libusb-1.0/"
