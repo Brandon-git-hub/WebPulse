@@ -95,6 +95,8 @@ document.getElementById('channels-pop').hidden = true;
 document.getElementById('pre').value = '25';
 document.getElementById('timeout').value = '5';
 document.getElementById('empty').querySelector = () => new FakeElement('p');
+document.getElementById('run').dataset.mode = 'run';
+document.documentElement.dataset.theme = 'dark';
 
 const store = {};
 Object.assign(globalThis, {
@@ -108,6 +110,8 @@ Object.assign(globalThis, {
   },
   requestAnimationFrame: (fn) => setTimeout(() => fn(performance.now()), 5),
   ResizeObserver: class { observe() {} },
+  getComputedStyle: () => ({ getPropertyValue: (v) => `var(${v})` }),
+  matchMedia: () => ({ matches: false, addEventListener() {} }),
 });
 // fetch() needs absolute URLs under Node; resolve against the page URL.
 const realFetch = globalThis.fetch;
@@ -364,6 +368,25 @@ check($('cur-a').textContent === '–', 'cursors cleared on new capture');
 // Settings persisted
 const saved = JSON.parse(store['webpulse.settings.v1'] || '{}');
 check(saved.samples === '500k' && saved.channels && saved.channels.length === 8, 'settings saved to localStorage');
+check($('run').dataset.mode === 'run' && !$('run').disabled, 'Run button back to Run after the capture');
+
+// Theme: auto -> light -> dark; default colours follow, a picked colour stays
+{
+  const colorIn = (i) => $('channels').children[i].querySelector('input[type=color]');
+  const c1 = colorIn(1);
+  c1.value = '#123456';
+  c1.dispatch('input');
+  c1.dispatch('change');
+  $('theme').dispatch('click');
+  check(document.documentElement.dataset.theme === 'light' && $('theme-label').textContent === 'Light',
+        `theme light (${document.documentElement.dataset.theme})`);
+  check(colorIn(0).value === '#8d5a2b' && colorIn(1).value === '#123456',
+        `light default colour, custom kept (${colorIn(0).value}, ${colorIn(1).value})`);
+  $('theme').dispatch('click');
+  check(document.documentElement.dataset.theme === 'dark' && colorIn(0).value === '#c69a6d', 'theme dark');
+  const st = JSON.parse(store['webpulse.settings.v1']);
+  check(st.channels[0].color === null && st.channels[1].color === '#123456', 'only picked colours saved');
+}
 
 console.log(failures ? `${failures} failure(s)` : 'all web smoke checks passed');
 process.exit(failures ? 1 : 0);

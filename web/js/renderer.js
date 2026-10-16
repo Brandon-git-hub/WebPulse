@@ -11,21 +11,23 @@ export const RULER_H = 30;
 export const ROW_H = 44;
 export const CHANNELS = 8;
 
-const COLORS = {
-  bg: '#0f1216',
-  rowAlt: '#12161b',
-  rowActive: 'rgba(255,255,255,0.035)',
-  measure: 'rgba(215,221,229,0.75)',
-  ruler: '#161a20',
-  grid: '#1f252d',
-  gridStrong: '#2a313b',
-  text: '#8a94a3',
-  textStrong: '#d7dde5',
-  outside: 'rgba(255,255,255,0.025)',
-  trigger: '#f5b041',
-  cursorA: '#5aa9ff',
-  cursorB: '#ff7ad9',
+// Canvas colours come from CSS custom properties (--cv-*) so the light and
+// dark themes are defined in one place; loadTheme() re-reads them.
+const COLORS = {};
+const COLOR_VARS = {
+  bg: '--cv-bg', rowAlt: '--cv-row-alt', rowActive: '--cv-row-active', measure: '--cv-measure',
+  ruler: '--cv-ruler', grid: '--cv-grid', gridStrong: '--cv-grid-strong', text: '--cv-text',
+  textStrong: '--cv-text-strong', outside: '--cv-outside', trigger: '--cv-trigger',
+  triggerInk: '--cv-trigger-ink', cursorA: '--cursor-a', cursorB: '--cursor-b',
+  cursorInk: '--cv-cursor-ink', cursorShade: '--cv-cursor-shade', dots: '--cv-dots',
+  hover: '--cv-hover',
 };
+
+export function loadTheme() {
+  const cs = getComputedStyle(document.documentElement);
+  for (const [k, v] of Object.entries(COLOR_VARS)) COLORS[k] = cs.getPropertyValue(v).trim() || '#888';
+}
+loadTheme();
 
 export class Renderer {
   constructor(canvas, viewport, channels) {
@@ -272,7 +274,7 @@ export class Renderer {
     }
     // Sample dots when zoomed in far enough
     if (1 / vp.spp >= 12) {
-      ctx.fillStyle = 'rgba(215,221,229,0.35)';
+      ctx.fillStyle = COLORS.dots;
       for (let i = i0; i < i1; i++) {
         const x = vp.xOf(d.t0 + i);
         for (let c = 0; c < CHANNELS; c++) {
@@ -407,7 +409,7 @@ export class Renderer {
     ctx.lineTo(x, RULER_H - 1);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = '#1b1300';
+    ctx.fillStyle = COLORS.triggerInk;
     ctx.font = 'bold 9px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
@@ -433,7 +435,7 @@ export class Renderer {
       ctx.stroke();
       ctx.fillStyle = color;
       ctx.fillRect(x - 7, 1, 14, 13);
-      ctx.fillStyle = '#0b0e12';
+      ctx.fillStyle = COLORS.cursorInk;
       ctx.font = 'bold 10px system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -443,7 +445,7 @@ export class Renderer {
     // Shade between cursors
     if (xs.a != null && xs.b != null) {
       const x0 = Math.min(xs.a, xs.b), x1 = Math.max(xs.a, xs.b);
-      ctx.fillStyle = 'rgba(90,169,255,0.07)';
+      ctx.fillStyle = COLORS.cursorShade;
       ctx.fillRect(x0, RULER_H, x1 - x0, H - RULER_H);
     }
   }
@@ -452,7 +454,7 @@ export class Renderer {
     if (this.hoverX == null) return;
     const { ctx } = this;
     const x = Math.round(this.hoverX) + 0.5;
-    ctx.strokeStyle = 'rgba(215,221,229,0.18)';
+    ctx.strokeStyle = COLORS.hover;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(x, RULER_H);

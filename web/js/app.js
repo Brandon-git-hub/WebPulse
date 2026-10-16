@@ -3,20 +3,27 @@
 // code-server's /proxy/9002/.
 
 import { formatFreq, formatRate, formatSI, formatTime, parseSI } from './format.js';
-import { CHANNELS, RULER_H, ROW_H, Renderer } from './renderer.js';
+import { CHANNELS, RULER_H, ROW_H, Renderer, loadTheme } from './renderer.js';
 import { Viewport } from './viewport.js';
 
 const $ = (id) => document.getElementById(id);
 
-// Resistor colour code (brown, red, orange, yellow, black, green, blue, violet)
-// in light tints that read well on the dark background; "black" is drawn as a
-// light grey since a dark line would vanish.
-const DEFAULT_COLORS = ['#c69a6d', '#e57373', '#ffa95e', '#f4d35e',
-                        '#b8c0cc', '#81c784', '#64b5f6', '#b388ff'];
-// Defaults of earlier versions: a saved colour equal to one of these was never
-// picked by the user, so it follows the new default.
-const OLD_DEFAULT_COLORS = ['#f4c542', '#4fc3f7', '#81c784', '#ff8a65',
-                            '#ba68c8', '#4db6ac', '#e57373', '#aed581'];
+// Resistor colour code (brown, red, orange, yellow, black, green, blue, violet),
+// one set per theme. On the dark background the tints are light and "black"
+// is a light grey, since a dark line would vanish.
+const DEFAULT_COLORS = {
+  dark: ['#c69a6d', '#e57373', '#ffa95e', '#f4d35e', '#b8c0cc', '#81c784', '#64b5f6', '#b388ff'],
+  light: ['#8d5a2b', '#d32f2f', '#e8710a', '#b38f00', '#202124', '#2e7d32', '#1565c0', '#7b1fa2'],
+};
+// Saved colours equal to a default (of this or an earlier version) were never
+// picked by the user, so they follow the theme's default.
+const KNOWN_DEFAULTS = new Set([...DEFAULT_COLORS.dark, ...DEFAULT_COLORS.light,
+  '#f4c542', '#4fc3f7', '#81c784', '#ff8a65', '#ba68c8', '#4db6ac', '#e57373', '#aed581']);
+const THEME_KEY = 'webpulse.theme';
+
+function currentTheme() {
+  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+}
 const TRIG_OPTIONS = [
   ['X', '·', "don't care"], ['0', '0', 'low'], ['1', '1', 'high'],
   ['R', '↑', 'rising edge'], ['F', '↓', 'falling edge'], ['E', '↕', 'either edge'],
@@ -40,7 +47,7 @@ function saveSettings() {
     samples: $('samples').value,
     pre: $('pre').value,
     timeout: $('timeout').value,
-    channels: channels.map(({ name, color, trig, enabled }) => ({ name, color, trig, enabled })),
+    channels: channels.map(({ name, custom, trig, enabled }) => ({ name, color: custom, trig, enabled })),
   };
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(s));
@@ -50,10 +57,11 @@ function saveSettings() {
 const settings = loadSettings();
 const channels = Array.from({ length: CHANNELS }, (_, i) => {
   const saved = (settings.channels || [])[i] || {};
+  const c = typeof saved.color === 'string' ? saved.color.toLowerCase() : '';
   return {
     name: typeof saved.name === 'string' ? saved.name : `CH${i}`,
-    color: /^#[0-9a-f]{6}$/i.test(saved.color || '') && saved.color !== OLD_DEFAULT_COLORS[i]
-      ? saved.color : DEFAULT_COLORS[i],
+    custom: /^#[0-9a-f]{6}$/.test(c) && !KNOWN_DEFAULTS.has(c) ? c : null,   // user-picked colour
+    get color() { return this.custom || DEFAULT_COLORS[currentTheme()][i]; },
     trig: TRIG_OPTIONS.some((o) => o[0] === saved.trig) ? saved.trig : 'X',
     enabled: saved.enabled !== false,
   };
@@ -296,6 +304,46 @@ vp.onChange(() => {
 
 // ---- channel list ------------------------------------------------------------------
 
+// ---- theme ---------------------------------------------------------------------------
+// "auto" follows the system; the choice is kept per viewer.
+
+const THEMES = ['auto', 'light', 'dark'];
+const THEME_TITLES = { auto: 'Theme: follow the system', light: 'Theme: light', dark: 'Theme: dark' };
+let themeChoice = (() => {
+  try {
+    const t = localStorage.getItem(THEME_KEY);
+    return THEMES.includes(t) ? t : 'auto';
+  } catch {
+    return 'auto';
+  }
+})();
+
+function applyTheme() {
+  const t = themeChoice;
+  document.documentElement.dataset.theme =
+    t === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : t;
+  $('theme').title = THEME_TITLES[t] + ' (click to change)';
+  $('theme-label').textContent = t[0].toUpperCase() + t.slice(1);
+  loadTheme();
+  // Default channel colours differ per theme.
+  channels.forEach((ch) => {
+    if (!ch.row) return;
+    ch.row.style.setProperty('--c', ch.color);
+    ch.row.querySelector('input[type=color]').value = ch.color;
+  });
+  updateChannelPicker();
+  updateMeasureReadout();
+  renderer.requestDraw();
+}
+
+function cycleTheme() {
+  themeChoice = THEMES[(THEMES.indexOf(themeChoice) + 1) % THEMES.length];
+  try {
+    localStorage.setItem(THEME_KEY, themeChoice);
+  } catch { /* storage unavailable: applies to this page only */ }
+  applyTheme();
+}
+
 function buildChannelList() {
   const list = $('channels');
   channels.forEach((ch, i) => {
@@ -319,7 +367,7 @@ function buildChannelList() {
     });
     const color = row.querySelector('input[type=color]');
     color.addEventListener('input', () => {
-      ch.color = color.value;
+      ch.custom = color.value.toLowerCase();
       row.style.setProperty('--c', ch.color);
       renderer.requestDraw();
       updateChannelPicker();
@@ -531,12 +579,25 @@ async function runCapture() {
   };
   saveSettings();
   try {
-    $('run').disabled = true;
+    $('run').disabled = true;       // until the status says the capture started
     await api('api/capture', body);
   } catch (e) {
     toast(e.message);
     $('run').disabled = false;
   }
+}
+
+/** One button: Run while idle, Stop while a capture is running. */
+function setRunButton(busy, online = true) {
+  const b = $('run');
+  b.dataset.mode = busy ? 'stop' : 'run';
+  b.title = busy ? 'Stop capture (S)' : 'Start capture (R)';
+  b.disabled = !online;
+}
+
+function toggleRun() {
+  if ($('run').dataset.mode === 'stop') stopCapture();
+  else runCapture();
 }
 
 async function stopCapture() {
@@ -569,8 +630,7 @@ function onStatus(st) {
   const pill = $('state');
   pill.dataset.state = st.state;
   pill.textContent = st.state === 'armed' ? 'waiting for trigger' : st.state;
-  $('run').disabled = busy;
-  $('stop').disabled = !busy;
+  setRunButton(busy);
 
   const wrap = $('progress-wrap');
   wrap.hidden = !(st.state === 'capturing' || st.state === 'processing');
@@ -671,8 +731,7 @@ function connect() {
     $('state').dataset.state = 'offline';
     $('state').textContent = 'offline';
     $('state-detail').textContent = 'reconnecting…';
-    $('run').disabled = true;
-    $('stop').disabled = true;
+    setRunButton(false, false);
     setTimeout(connect, app.wsRetry);
     app.wsRetry = Math.min(app.wsRetry * 2, 5000);
   };
@@ -859,10 +918,10 @@ document.addEventListener('keydown', (ev) => {
   const W = vp.width;
   switch (ev.key) {
     case 'r': case 'R':
-      if (!$('run').disabled) runCapture();
+      if (!$('run').disabled && $('run').dataset.mode === 'run') runCapture();
       break;
     case 's': case 'S':
-      if (!$('stop').disabled) stopCapture();
+      if (!$('run').disabled && $('run').dataset.mode === 'stop') stopCapture();
       break;
     case 'f': case 'F':
       fitView();
@@ -973,8 +1032,10 @@ async function init() {
   });
   $('pre').addEventListener('change', saveSettings);
   $('timeout').addEventListener('change', saveSettings);
-  $('run').addEventListener('click', runCapture);
-  $('stop').addEventListener('click', stopCapture);
+  $('run').addEventListener('click', toggleRun);
+  $('theme').addEventListener('click', cycleTheme);
+  matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => applyTheme());
+  applyTheme();
 
   new ResizeObserver(() => renderer.resize()).observe($('wave-wrap'));
   renderer.resize();

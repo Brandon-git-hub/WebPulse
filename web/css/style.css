@@ -3,19 +3,79 @@
   --panel: #161a20;
   --panel-2: #1c2129;
   --border: #2a313b;
+  --row-line: #1f242c;
   --text: #d7dde5;
   --muted: #8a94a3;
   --accent: #37d0b5;
   --accent-ink: #062b25;
   --danger: #ff6b6b;
+  --danger-ink: #2a0d0d;
   --warn: #f5b041;
   --cursor-a: #5aa9ff;
   --cursor-b: #ff7ad9;
+  --toast-bg: #3a1d22;
+  --toast-ink: #ffd9d9;
+  --shadow: rgba(0, 0, 0, 0.5);
+  /* canvas */
+  --cv-bg: #0f1216;
+  --cv-row-alt: #12161b;
+  --cv-row-active: rgba(255, 255, 255, 0.035);
+  --cv-measure: rgba(215, 221, 229, 0.75);
+  --cv-ruler: #161a20;
+  --cv-grid: #1f252d;
+  --cv-grid-strong: #2a313b;
+  --cv-text: #8a94a3;
+  --cv-text-strong: #d7dde5;
+  --cv-outside: rgba(255, 255, 255, 0.025);
+  --cv-trigger: #f5b041;
+  --cv-trigger-ink: #1b1300;
+  --cv-cursor-ink: #0b0e12;
+  --cv-cursor-shade: rgba(90, 169, 255, 0.07);
+  --cv-dots: rgba(215, 221, 229, 0.35);
+  --cv-hover: rgba(215, 221, 229, 0.18);
   --row-h: 44px;
   --ruler-h: 30px;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color-scheme: dark;
+}
+
+/* Light theme: chosen explicitly, or following the system when on "auto". */
+:root[data-theme="light"] {
+  --bg: #eef1f4;
+  --panel: #ffffff;
+  --panel-2: #f2f4f7;
+  --border: #d3d9e0;
+  --row-line: #e3e7ec;
+  --text: #1f2933;
+  --muted: #5f6b7a;
+  --accent: #0f9d84;
+  --accent-ink: #ffffff;
+  --danger: #d93025;
+  --danger-ink: #ffffff;
+  --warn: #b06d00;
+  --cursor-a: #1a73e8;
+  --cursor-b: #c2187a;
+  --toast-bg: #fde8e7;
+  --toast-ink: #5f1410;
+  --shadow: rgba(31, 41, 51, 0.18);
+  --cv-bg: #ffffff;
+  --cv-row-alt: #f6f8fa;
+  --cv-row-active: rgba(15, 157, 132, 0.06);
+  --cv-measure: rgba(31, 41, 51, 0.7);
+  --cv-ruler: #f2f4f7;
+  --cv-grid: #e6e9ee;
+  --cv-grid-strong: #cfd5dc;
+  --cv-text: #5f6b7a;
+  --cv-text-strong: #1f2933;
+  --cv-outside: rgba(31, 41, 51, 0.04);
+  --cv-trigger: #d68910;
+  --cv-trigger-ink: #ffffff;
+  --cv-cursor-ink: #ffffff;
+  --cv-cursor-shade: rgba(26, 115, 232, 0.07);
+  --cv-dots: rgba(31, 41, 51, 0.35);
+  --cv-hover: rgba(31, 41, 51, 0.18);
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -135,6 +195,13 @@ button.primary {
   color: var(--accent-ink);
 }
 button.primary:hover:not(:disabled) { filter: brightness(1.1); border-color: var(--accent); }
+/* Run / Stop share one button; data-mode picks the look. */
+#run { min-width: 76px; justify-content: center; }
+#run[data-mode="stop"] { background: var(--danger); border-color: var(--danger); color: var(--danger-ink); }
+#run[data-mode="stop"]:hover:not(:disabled) { filter: brightness(1.1); border-color: var(--danger); }
+#run .when-stop, #run[data-mode="stop"] .when-run { display: none; }
+#run[data-mode="stop"] .when-stop { display: inline-flex; align-items: center; gap: 6px; }
+#run .when-run { display: inline-flex; align-items: center; gap: 6px; }
 
 .hint { color: var(--muted); font-size: 12px; }
 .device { max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -214,7 +281,7 @@ button.primary:hover:not(:disabled) { filter: brightness(1.1); border-color: var
   align-items: center;
   gap: 6px;
   padding: 0 8px 0 0;
-  border-bottom: 1px solid #1f242c;
+  border-bottom: 1px solid var(--row-line);
 }
 .ch .bar {
   width: 4px;
@@ -295,7 +362,7 @@ button.primary:hover:not(:disabled) { filter: brightness(1.1); border-color: var
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 28px var(--shadow);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -406,10 +473,10 @@ button.mini { padding: 0 6px; font-size: 10px; line-height: 16px; }
   max-width: min(640px, calc(100vw - 32px));
   padding: 9px 14px;
   border-radius: 8px;
-  background: #3a1d22;
+  background: var(--toast-bg);
   border: 1px solid var(--danger);
-  color: #ffd9d9;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  color: var(--toast-ink);
+  box-shadow: 0 6px 24px var(--shadow);
 }
 .toast.info { background: var(--panel-2); border-color: var(--border); color: var(--text); }
 

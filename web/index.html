@@ -3,7 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
+  <script>
+    // Apply the saved or system theme before the first paint (no flash).
+    (function () {
+      var t = 'auto';
+      try { t = localStorage.getItem('webpulse.theme') || 'auto'; } catch (e) {}
+      if (t === 'auto') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
   <title>WebPulse</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M1 12h3V4h4v8h3V4h4' fill='none' stroke='%2337d0b5' stroke-width='2'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="css/style.css">
@@ -72,11 +81,9 @@
     </div>
 
     <div class="group">
-      <button id="run" class="primary" title="Start capture (R)">
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>Run
-      </button>
-      <button id="stop" title="Stop capture (S)" disabled>
-        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1"/></svg>Stop
+      <button id="run" class="primary" data-mode="run" title="Start capture (R)">
+        <span class="when-run"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>Run</span>
+        <span class="when-stop"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1"/></svg>Stop</span>
       </button>
     </div>
 
@@ -104,6 +111,10 @@
       <a id="export-vcd" class="button disabled" download>VCD</a>
       <a id="export-csv" class="button disabled" download>CSV</a>
       <span id="device" class="hint device"></span>
+      <button id="theme" title="Theme: follow the system" aria-label="Theme">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 1.5v11a5.5 5.5 0 0 1 0-11z"/></svg>
+        <span id="theme-label">Auto</span>
+      </button>
     </div>
   </header>
 
