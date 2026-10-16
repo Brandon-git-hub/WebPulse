@@ -139,6 +139,9 @@ third_party/civetweb/   CivetWeb 1.16 (MIT)
 
 ## Licenses
 
-The WebPulse code uses CivetWeb (MIT). The fx2lafw firmware is GPLv2+ and is
-shipped as a separate file with its own `COPYING`; it is not compiled into the
-executable.
+WebPulse is released under the MIT License (see `LICENSE`).
+
+- `third_party/civetweb/`: CivetWeb, MIT (`third_party/civetweb/LICENSE.md`).
+- `firmware/`: the fx2lafw firmware is GPLv2+ and is shipped as a separate file
+  with its own `COPYING`. It is loaded at run time and not compiled into the
+  executable, so it keeps its own license.
