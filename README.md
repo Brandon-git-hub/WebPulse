@@ -128,7 +128,7 @@ then need an access token. WebPulse makes a random one at start-up and prints
 the address to open:
 
 ```
-WebPulse 0.1.0 listening on port 9002  (Ctrl+C to quit)
+WebPulse 0.2.0 listening on port 9002  (Ctrl+C to quit)
   on this computer:  http://localhost:9002/
   from elsewhere:    http://<this-computer>:9002/?token=930b25a523cc8bb39041ac3f524115ba
 ```

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - Protocol decoders: UART, SPI, I²C, Parallel and Counter, shown as rows
   below the channels; your own decoders as JavaScript files in `decoders/`
@@ -14,12 +14,15 @@
 - Light theme (or follow the system); one Run/Stop button.
 - Reorder channels by dragging.
 - New decoders pick channels by name (e.g. a channel named "SCLK" or "SDA").
-
 - If the default port 9002 is taken, use the next free one up to 9011 (not
   when `-p` is given) and print the address actually used.
 - When the HTTP server cannot listen, say why (port in use, reserved by
   Windows, …) instead of "Failed to setup server ports".
-- README: how to get past the SmartScreen warning for the unsigned exe.
+- README: how to get past the SmartScreen warning for the unsigned exe, and
+  Linux / Docker setup (udev rule, USB passthrough); tested on Linux in a
+  container at 24 MHz × 256M samples.
+- CI: headless Chrome checks of the UI; the release packages now include
+  `decoders/` with an example decoder.
 
 ## 0.1.0
 
