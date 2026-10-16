@@ -23,6 +23,10 @@ env:
   LIBUSB_VERSION: 1.0.30
   LIBUSB_WIN_SHA256: 7fb1dfec805b97983763d7d0ae244320da12add1003d4249c96cc4d586398c79
   LIBUSB_SRC_SHA256: fea36f34f9156400209595e300840767ab1a385ede1dc7ee893015aea9c6dbaf
+  # Official 7-Zip build: the libusb .7z uses methods (e.g. the ARM64 filter)
+  # that the distribution's p7zip 16.02 cannot read.
+  SEVENZIP_URL: https://www.7-zip.org/a/7z2301-linux-x64.tar.xz
+  SEVENZIP_SHA256: 23babcab045b78016e443f862363e4ab63c77d75bc715c0b3463f6134cbcf318
 
 jobs:
   linux:
@@ -74,14 +78,12 @@ jobs:
           path: dist/*
 
   windows:
-    # Cross-compiled with llvm-mingw. 24.04 for its 7-Zip 23.01: the libusb .7z
-    # uses methods (e.g. the ARM64 filter) that 22.04's p7zip 16.02 cannot read.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04     # cross-compiled with llvm-mingw
     steps:
       - uses: actions/checkout@v4
 
       - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y ninja-build 7zip pkg-config
+        run: sudo apt-get update && sudo apt-get install -y ninja-build pkg-config
 
       - name: Set up toolchain (same layout as /mnt/ssd/tools)
         run: |
@@ -96,7 +98,10 @@ jobs:
           curl -fsSL -o libusb.7z \
             https://github.com/libusb/libusb/releases/download/v$LIBUSB_VERSION/libusb-$LIBUSB_VERSION.7z
           echo "$LIBUSB_WIN_SHA256  libusb.7z" | sha256sum -c
-          7zz x -olibusb-win libusb.7z > /dev/null
+          curl -fsSL -o 7zip.tar.xz "$SEVENZIP_URL"
+          echo "$SEVENZIP_SHA256  7zip.tar.xz" | sha256sum -c
+          mkdir 7zip && tar xJf 7zip.tar.xz -C 7zip 7zzs   # statically linked
+          ./7zip/7zzs x -olibusb-win libusb.7z > /dev/null
           S="$T/mingw-w64/current/x86_64-w64-mingw32"
           mkdir -p "$S/include/libusb-1.0" "$S/lib/pkgconfig"
           cp "$(find libusb-win -path '*/include/libusb.h' | head -1)" "$S/include/libusb-1.0/"
