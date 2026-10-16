@@ -288,6 +288,21 @@ button.primary:hover:not(:disabled) { filter: brightness(1.1); border-color: var
   align-self: stretch;
   background: var(--c);
 }
+.ch .grip {
+  width: 12px;
+  margin-right: -4px;
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  opacity: 0.5;
+  font-size: 12px;
+}
+.ch:hover .grip { opacity: 1; }
+.ch.dragging { opacity: 0.55; }
+.ch.dragging .grip { cursor: grabbing; }
+.ch.drop-above { box-shadow: inset 0 2px 0 var(--accent); }
+.ch.drop-below { box-shadow: inset 0 -2px 0 var(--accent); }
 .ch .idx {
   width: 26px;
   text-align: right;
@@ -396,6 +411,8 @@ button.primary:hover:not(:disabled) { filter: brightness(1.1); border-color: var
 .pop-actions span { color: var(--muted); font-size: 12px; padding-right: 4px; }
 .pop-actions button { padding: 3px 10px; font-weight: 500; font-size: 12px; justify-content: center; }
 .pop-note { margin: 0; color: var(--muted); font-size: 11px; }
+.pop-foot { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+.pop-foot button { padding: 3px 10px; font-weight: 500; font-size: 12px; flex: 0 0 auto; }
 @media (max-width: 640px) {
   .pop-grid { grid-template-columns: repeat(2, minmax(110px, 1fr)); }
   .pop-actions { display: flex; flex-wrap: wrap; }

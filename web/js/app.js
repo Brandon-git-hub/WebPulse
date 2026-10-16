@@ -48,6 +48,7 @@ function saveSettings() {
     pre: $('pre').value,
     timeout: $('timeout').value,
     channels: channels.map(({ name, custom, trig, enabled }) => ({ name, color: custom, trig, enabled })),
+    order,
   };
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(s));
@@ -72,6 +73,13 @@ const channels = Array.from({ length: CHANNELS }, (_, i) => {
 const canvas = $('wave');
 const vp = new Viewport();
 const renderer = new Renderer(canvas, vp, channels);
+// Display order of the channels (top first); a saved order is used only if it
+// is a permutation of 0..7.
+const order = (Array.isArray(settings.order) && settings.order.length === CHANNELS &&
+  [...settings.order].sort().every((c, i) => c === i)) ? settings.order.slice()
+  : Array.from({ length: CHANNELS }, (_, c) => c);
+renderer.order = order;
+renderer.layout();
 
 const app = {
   device: null,
@@ -350,14 +358,22 @@ function buildChannelList() {
     const row = document.createElement('div');
     row.className = 'ch';
     row.style.setProperty('--c', ch.color);
+    row.dataset.ch = i;
     row.innerHTML = `
       <span class="bar"></span>
+      <span class="grip" title="Drag to reorder (or Alt+↑ / Alt+↓ in the name box)">⠿</span>
       <span class="idx">${i}</span>
       <label class="color" title="Channel colour"><input type="color" value="${ch.color}"></label>
       <input class="name" maxlength="24" spellcheck="false" title="Channel name">
       <select class="trig" title="Trigger condition for CH${i}"></select>`;
     const name = row.querySelector('.name');
     name.value = ch.name;
+    name.addEventListener('keydown', (ev) => {
+      if (!ev.altKey || (ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown')) return;
+      ev.preventDefault();
+      moveChannel(i, ev.key === 'ArrowUp' ? -1 : 1);
+      name.focus();
+    });
     name.addEventListener('change', () => {
       ch.name = name.value.trim() || `CH${i}`;
       name.value = ch.name;
@@ -390,10 +406,79 @@ function buildChannelList() {
     });
     ch.row = row;
     row.hidden = !ch.enabled;
-    list.appendChild(row);
+    row.querySelector('.grip').addEventListener('pointerdown', (ev) => startRowDrag(ev, i));
   });
+  placeRows();
   document.documentElement.style.setProperty('--row-h', ROW_H + 'px');
   document.documentElement.style.setProperty('--ruler-h', RULER_H + 'px');
+}
+
+// ---- channel order ---------------------------------------------------------------------
+
+/** Put the list rows in display order (appendChild moves existing nodes). */
+function placeRows() {
+  const list = $('channels');
+  for (const c of order) list.appendChild(channels[c].row);
+}
+
+function setOrder(next) {
+  if (next.every((c, k) => c === order[k])) return;
+  order.splice(0, order.length, ...next);
+  placeRows();
+  renderer.relayout();
+  saveSettings();
+}
+
+/** Move channel c up (-1) or down (+1) past the next visible channel. */
+function moveChannel(c, dir) {
+  const next = order.slice();
+  let k = next.indexOf(c);
+  let j = k + dir;
+  while (j >= 0 && j < next.length && !channels[next[j]].enabled) j += dir;
+  if (j < 0 || j >= next.length) return;
+  next.splice(k, 1);
+  next.splice(j, 0, c);
+  setOrder(next);
+}
+
+/** Drag a row by its grip; drop it above or below the row under the pointer. */
+function startRowDrag(ev, c) {
+  if (ev.button !== 0) return;
+  ev.preventDefault();
+  const grip = ev.target;
+  const row = channels[c].row;
+  let drop = null;            // { c, after }
+  grip.setPointerCapture(ev.pointerId);
+  row.classList.add('dragging');
+  const clear = () => channels.forEach((ch) => ch.row.classList.remove('drop-above', 'drop-below'));
+  const move = (e) => {
+    clear();
+    drop = null;
+    for (const t of order) {
+      const r = channels[t].row;
+      if (r.hidden || t === c) continue;
+      const box = r.getBoundingClientRect();
+      if (e.clientY >= box.top && e.clientY < box.top + box.height) {
+        drop = { c: t, after: e.clientY >= box.top + box.height / 2 };
+        r.classList.add(drop.after ? 'drop-below' : 'drop-above');
+        break;
+      }
+    }
+  };
+  const up = () => {
+    grip.removeEventListener('pointermove', move);
+    grip.removeEventListener('pointerup', up);
+    grip.removeEventListener('pointercancel', up);
+    row.classList.remove('dragging');
+    clear();
+    if (!drop) return;
+    const next = order.filter((t) => t !== c);
+    next.splice(next.indexOf(drop.c) + (drop.after ? 1 : 0), 0, c);
+    setOrder(next);
+  };
+  grip.addEventListener('pointermove', move);
+  grip.addEventListener('pointerup', up);
+  grip.addEventListener('pointercancel', up);
 }
 
 // ---- channel picker (toolbar popover) ------------------------------------------------
@@ -453,6 +538,7 @@ function buildChannelPicker() {
       setEnabled(channels.map((c, i) => (test(c, i, m) ? on : c.enabled)));
     });
   }
+  $('order-reset').addEventListener('click', () => setOrder(channels.map((_, c) => c)));
   const btn = $('channels-btn'), pop = $('channels-pop');
   btn.addEventListener('click', () => showChannelPicker(pop.hidden));
   pop.addEventListener('keydown', (ev) => {

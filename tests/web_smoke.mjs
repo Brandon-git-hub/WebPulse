@@ -54,8 +54,15 @@ class FakeElement {
     };
     this.parentElement = { clientWidth: 1200 };
   }
-  appendChild(c) { this.children.push(c); return c; }
+  appendChild(c) {
+    // Like the DOM: appending a node that is already a child moves it.
+    const k = this.children.indexOf(c);
+    if (k >= 0) this.children.splice(k, 1);
+    this.children.push(c);
+    return c;
+  }
   addEventListener(type, fn) { (this.handlers[type] ||= []).push(fn); }
+  removeEventListener(type, fn) { this.handlers[type] = (this.handlers[type] || []).filter((f) => f !== fn); }
   dispatch(type, ev = {}) {
     const e = { preventDefault() {}, target: this, button: 0, pointerId: 1, ...ev };
     for (const fn of this.handlers[type] || []) fn(e);
@@ -369,6 +376,28 @@ check($('cur-a').textContent === '–', 'cursors cleared on new capture');
 const saved = JSON.parse(store['webpulse.settings.v1'] || '{}');
 check(saved.samples === '500k' && saved.channels && saved.channels.length === 8, 'settings saved to localStorage');
 check($('run').dataset.mode === 'run' && !$('run').disabled, 'Run button back to Run after the capture');
+
+// Channel order: Alt+Down in a name box, dragging a grip, Reset order
+{
+  const list = $('channels');
+  const shown = () => list.children.map((r) => r.dataset.ch).join('');
+  const rowOf = (c) => list.children.find((r) => r.dataset.ch === c);
+  const nameKey = (c, key) => rowOf(c).querySelector('.name').dispatch('keydown', { key, altKey: true });
+  nameKey(0, 'ArrowDown');
+  check(shown() === '10234567', `Alt+Down moves CH0 down (${shown()})`);
+  nameKey(0, 'ArrowUp');
+  check(shown() === '01234567', `Alt+Up moves it back (${shown()})`);
+  // Rows are 44 px tall in display order; drop CH7 on the upper half of CH2.
+  list.children.forEach((r, k) => { r.getBoundingClientRect = () => ({ top: 30 + k * 44, height: 44 }); });
+  const grip = rowOf(7).querySelector('.grip');
+  grip.dispatch('pointerdown', { button: 0, target: grip });
+  grip.dispatch('pointermove', { clientY: 30 + 2 * 44 + 10 });
+  grip.dispatch('pointerup', {});
+  check(shown() === '01723456', `drag CH7 above CH2 (${shown()})`);
+  check(JSON.parse(store['webpulse.settings.v1']).order.join('') === '01723456', 'order saved');
+  $('order-reset').dispatch('click');
+  check(shown() === '01234567', `reset order (${shown()})`);
+}
 
 // Theme: auto -> light -> dark; default colours follow, a picked colour stays
 {

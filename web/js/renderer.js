@@ -43,6 +43,7 @@ export class Renderer {
     this.dpr = 1;
     this.cssW = 0;
     this.rows = [];             // [{ top, h }] per channel
+    this.order = Array.from({ length: CHANNELS }, (_, c) => c);   // display order, top first
     this.layout();
     this.pending = false;
   }
@@ -50,16 +51,16 @@ export class Renderer {
   /** Recompute row positions from the channels' enabled flags. */
   layout() {
     let y = RULER_H;
-    this.rows = this.channels.map((ch) => {
-      const h = ch.enabled ? ROW_H : 0;
-      const r = { top: y, h };
+    this.rows = [];
+    for (const c of this.order) {
+      const h = this.channels[c].enabled ? ROW_H : 0;
+      this.rows[c] = { top: y, h };
       y += h;
-      return r;
-    });
+    }
     this.cssH = y;
   }
 
-  /** Call after enabling or disabling a channel. */
+  /** Call after enabling, disabling or reordering channels. */
   relayout() {
     this.layout();
     this.cssW = 0;      // force resize() to reallocate the canvas
@@ -108,7 +109,8 @@ export class Renderer {
     ctx.fillRect(0, 0, W, H);
 
     // Alternate shading by visible row so it stays striped with rows hidden.
-    for (let c = 0, vis = 0; c < CHANNELS; c++) {
+    let vis = 0;
+    for (const c of this.order) {
       const { top, h } = this.rows[c];
       if (!h) continue;
       if (vis++ % 2) {
