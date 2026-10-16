@@ -65,6 +65,7 @@ struct wp_server {
     int nws;
     int port;
     char decoders_dir[1024];
+    char token[72];
 
     pthread_t status_thread;
     atomic_int quit;
@@ -98,9 +99,14 @@ static const char *status_text(int code)
     case 200: return "OK";
     case 400: return "Bad Request";
     case 404: return "Not Found";
+    case 401: return "Unauthorized";
     case 405: return "Method Not Allowed";
     case 409: return "Conflict";
+    case 411: return "Length Required";
     case 413: return "Payload Too Large";
+    case 422: return "Unprocessable Content";
+    case 500: return "Internal Server Error";
+    case 503: return "Service Unavailable";
     default:  return "Error";
     }
 }
@@ -791,6 +797,84 @@ static int log_cb(const struct mg_connection *conn, const char *msg)
     return 1;       /* handled: CivetWeb has no log file configured anyway */
 }
 
+/* ---- access token ------------------------------------------------------- */
+/*
+ * With a token set, clients other than this machine need it: either the
+ * webpulse_token cookie or ?token=... once, which sets the cookie (HttpOnly,
+ * SameSite=Strict) and redirects to the same page without it. Checked for
+ * every request, WebSocket upgrades included, before any handler runs.
+ */
+#define TOKEN_COOKIE "webpulse_token"
+
+static int token_eq(const char *a, const char *b)
+{
+    size_t la = strlen(a), lb = strlen(b), i;
+    unsigned diff = (unsigned)(la ^ lb);
+    for (i = 0; i < la && i < lb; i++)
+        diff |= (unsigned)(a[i] ^ b[i]);
+    return diff == 0;
+}
+
+static int is_loopback(const char *addr)
+{
+    return strncmp(addr, "127.", 4) == 0 || strcmp(addr, "::1") == 0 ||
+           strncmp(addr, "::ffff:127.", 11) == 0;
+}
+
+static const char login_page[] =
+    "<!doctype html><html><head><meta charset=\"utf-8\">"
+    "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+    "<title>WebPulse</title><style>"
+    "body{font:15px system-ui,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;"
+    "background:#0f1216;color:#d7dde5}"
+    "@media (prefers-color-scheme:light){body{background:#eef1f4;color:#1f2933}}"
+    "form{max-width:420px;padding:24px}input{font:14px monospace;width:100%;padding:8px;"
+    "margin:8px 0;box-sizing:border-box}button{padding:7px 16px;font-weight:600}"
+    "p{color:#8a94a3}</style></head><body><form method=\"get\">"
+    "<h2>WebPulse</h2><p>This server asks for an access token. Open the address that "
+    "webpulse printed when it started, or paste the token:</p>"
+    "<input name=\"token\" autocomplete=\"off\" autofocus required>"
+    "<button type=\"submit\">Open</button></form></body></html>";
+
+static int auth_cb(struct mg_connection *conn)
+{
+    wp_server *s = mg_get_user_data(mg_get_context(conn));
+    const struct mg_request_info *ri = mg_get_request_info(conn);
+    const char *qs = ri->query_string ? ri->query_string : "";
+    const char *cookies = mg_get_header(conn, "Cookie");
+    char v[80];
+
+    if (!s->token[0] || is_loopback(ri->remote_addr))
+        return 0;
+    if (cookies && mg_get_cookie(cookies, TOKEN_COOKIE, v, sizeof(v)) > 0 && token_eq(v, s->token))
+        return 0;
+    if (mg_get_var(qs, strlen(qs), "token", v, sizeof(v)) > 0 && token_eq(v, s->token)) {
+        if (strcmp(ri->request_method, "GET") != 0 || strncmp(ri->local_uri, "/api/", 5) == 0)
+            return 0;
+        /* A page opened with ?token=: remember it and drop it from the URL. */
+        mg_printf(conn,
+                  "HTTP/1.1 302 Found\r\n"
+                  "Location: %s\r\n"
+                  "Set-Cookie: " TOKEN_COOKIE "=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000\r\n"
+                  "Cache-Control: no-store\r\n"
+                  "Content-Length: 0\r\n"
+                  "\r\n",
+                  ri->local_uri, s->token);
+        return 302;
+    }
+    if (strncmp(ri->local_uri, "/api/", 5) == 0 || strcmp(ri->local_uri, "/ws") == 0)
+        return send_error(conn, 401, "access token required");
+    mg_printf(conn,
+              "HTTP/1.1 401 Unauthorized\r\n"
+              "Content-Type: text/html; charset=utf-8\r\n"
+              "Content-Length: %zu\r\n"
+              "Cache-Control: no-store\r\n"
+              "\r\n",
+              sizeof(login_page) - 1);
+    mg_write(conn, login_page, sizeof(login_page) - 1);
+    return 401;
+}
+
 /* A hint for the common bind errors. */
 static const char *bind_hint(const char *msg)
 {
@@ -836,6 +920,8 @@ wp_server *wp_server_start(wp_engine *e, const wp_server_opts *o, char *err, siz
     s->version = o->version ? o->version : "";
     if (o->decoders_dir)
         wp_strlcpy(s->decoders_dir, o->decoders_dir, sizeof(s->decoders_dir));
+    if (o->token)
+        wp_strlcpy(s->token, o->token, sizeof(s->token));
     pthread_mutex_init(&s->ws_lock, NULL);
     atomic_init(&s->quit, 0);
 
@@ -859,6 +945,7 @@ wp_server *wp_server_start(wp_engine *e, const wp_server_opts *o, char *err, siz
 
     memset(&cb, 0, sizeof(cb));
     cb.log_message = log_cb;
+    cb.begin_request = auth_cb;
     memset(&init, 0, sizeof(init));
     init.callbacks = &cb;
     init.user_data = s;

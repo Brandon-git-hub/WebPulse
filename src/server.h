@@ -12,6 +12,7 @@ typedef struct {
     int port_tries;             /* if port cannot be bound, also try port+1 .. port+tries-1 */
     const char *web_root;       /* NULL = serve the embedded copy of web/ */
     const char *decoders_dir;   /* user protocol decoders (*.js), may be NULL */
+    const char *token;          /* access token for non-local clients, NULL = none */
     const char *version;
 } wp_server_opts;
 

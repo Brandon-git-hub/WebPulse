@@ -1,7 +1,29 @@
+#ifdef _WIN32
+#define _CRT_RAND_S     /* rand_s() */
+#endif
 #include "platform.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #ifdef _WIN32
 #include <windows.h>
+
+int wp_random_bytes(void *buf, size_t n)
+{
+    uint8_t *p = buf;
+    while (n) {
+        unsigned int v;
+        size_t k = n < sizeof(v) ? n : sizeof(v);
+        if (rand_s(&v) != 0)
+            return -1;
+        memcpy(p, &v, k);
+        p += k;
+        n -= k;
+    }
+    return 0;
+}
 
 uint64_t wp_now_us(void)
 {
@@ -19,6 +41,15 @@ void wp_sleep_ms(unsigned ms)
 }
 #else
 #include <time.h>
+
+int wp_random_bytes(void *buf, size_t n)
+{
+    FILE *f = fopen("/dev/urandom", "rb");
+    size_t got = f ? fread(buf, 1, n, f) : 0;
+    if (f)
+        fclose(f);
+    return got == n ? 0 : -1;
+}
 
 uint64_t wp_now_us(void)
 {

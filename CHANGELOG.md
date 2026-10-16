@@ -8,6 +8,9 @@
 - Open and save sigrok / PulseView session files (`.sr`), in the UI (also by
   dropping a file) and on the command line (`--open`, `-o file.sr`).
 - Save the view as PNG.
+- Access token for remote browsers: with `--listen` on a non-local address a
+  random token is required (printed at start-up; `--token`, `--no-auth`).
+  Connections from the same computer need none.
 - Light theme (or follow the system); one Run/Stop button.
 - Reorder channels by dragging.
 

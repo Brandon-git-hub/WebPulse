@@ -43,6 +43,8 @@ typedef struct {
     const char *web_root;
     const char *firmware;
     const char *decoders;
+    const char *token;
+    int no_auth;
     double sim_speed;
     uint64_t max_samples;
 
@@ -68,6 +70,9 @@ static void usage(FILE *f)
         "Server:\n"
         "  -b, --backend sim|fx2    device backend (default: %s)\n"
         "  -l, --listen ADDR        bind address (default 127.0.0.1, 0.0.0.0 = all)\n"
+        "      --token TOKEN        access token for other computers (default: a random\n"
+        "                           one when --listen is not local; it is printed)\n"
+        "      --no-auth            no access token, anyone who can reach the port may use it\n"
         "  -p, --port N             HTTP port (default 9002; if it is taken and -p is\n"
         "                           not given, the next free one up to 9011)\n"
         "  -w, --web-root DIR       serve the UI from DIR instead of the embedded copy\n"
@@ -139,6 +144,10 @@ static int parse_args(int argc, char **argv, options *o)
             }
         } else if (IS("-w", "--web-root")) {
             if (need_arg(argc, argv, &i, &o->web_root)) return -1;
+        } else if (strcmp(a, "--token") == 0) {
+            if (need_arg(argc, argv, &i, &o->token)) return -1;
+        } else if (strcmp(a, "--no-auth") == 0) {
+            o->no_auth = 1;
         } else if (IS("-d", "--decoders")) {
             if (need_arg(argc, argv, &i, &o->decoders)) return -1;
         } else if (IS("-f", "--firmware")) {
@@ -385,11 +394,16 @@ static int run_capture(wp_engine *e, const options *o)
     return rc;
 }
 
+static int is_local_addr(const char *a)
+{
+    return strncmp(a, "127.", 4) == 0 || strcmp(a, "localhost") == 0 || strcmp(a, "::1") == 0;
+}
+
 static int run_server(wp_engine *e, const options *o)
 {
     wp_server_opts so;
     wp_server *srv;
-    char err[300], dec_dir[1024];
+    char err[300], dec_dir[1024], token[72] = "";
 
     memset(&so, 0, sizeof(so));
     so.listen = o->listen;
@@ -404,14 +418,48 @@ static int run_server(wp_engine *e, const options *o)
         strncat(dec_dir, "decoders", sizeof(dec_dir) - strlen(dec_dir) - 1);
     }
     so.decoders_dir = dec_dir;
+
+    /* Other machines need a token unless told otherwise; this machine never does. */
+    if (o->token) {
+        if (strlen(o->token) < 8 || strlen(o->token) > 64) {
+            fprintf(stderr, "webpulse: --token must be 8..64 characters\n");
+            return 2;
+        }
+        wp_strlcpy(token, o->token, sizeof(token));
+    } else if (!o->no_auth && !is_local_addr(o->listen)) {
+        uint8_t r[16];
+        int i;
+        if (wp_random_bytes(r, sizeof(r)) != 0) {
+            fprintf(stderr, "webpulse: cannot create an access token (use --token or --no-auth)\n");
+            return 1;
+        }
+        for (i = 0; i < 16; i++)
+            snprintf(token + 2 * i, 3, "%02x", r[i]);
+    }
+    so.token = token[0] ? token : NULL;
+
     srv = wp_server_start(e, &so, err, sizeof(err));
     if (!srv) {
         fprintf(stderr, "webpulse: %s\n", err);
         return 1;
     }
-    fprintf(stderr, "WebPulse %s listening on http://%s:%d/  (Ctrl+C to quit)\n",
-            WP_VERSION, strcmp(o->listen, "0.0.0.0") == 0 ? "localhost" : o->listen,
-            wp_server_port(srv));
+    if (is_local_addr(o->listen)) {
+        fprintf(stderr, "WebPulse %s listening on http://%s:%d/  (Ctrl+C to quit)\n",
+                WP_VERSION, strcmp(o->listen, "localhost") == 0 ? "localhost" : o->listen,
+                wp_server_port(srv));
+    } else {
+        const char *host = strcmp(o->listen, "0.0.0.0") == 0 || strcmp(o->listen, "::") == 0
+                         ? "<this-computer>" : o->listen;
+        fprintf(stderr, "WebPulse %s listening on port %d  (Ctrl+C to quit)\n"
+                        "  on this computer:  http://localhost:%d/\n",
+                WP_VERSION, wp_server_port(srv), wp_server_port(srv));
+        if (token[0])
+            fprintf(stderr, "  from elsewhere:    http://%s:%d/?token=%s\n", host,
+                    wp_server_port(srv), token);
+        else
+            fprintf(stderr, "  from elsewhere:    http://%s:%d/  (no access token: --no-auth)\n",
+                    host, wp_server_port(srv));
+    }
     while (!g_quit)
         wp_sleep_ms(100);
     fprintf(stderr, "shutting down\n");

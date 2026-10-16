@@ -70,7 +70,7 @@ Copy `webpulse.exe` together with the `firmware/` folder next to it.
 
 ```bash
 webpulse                         # fx2 backend, UI on http://127.0.0.1:9002/
-webpulse --listen 0.0.0.0        # allow remote browsers (open the firewall port)
+webpulse --listen 0.0.0.0        # allow remote browsers (see "Remote access")
 webpulse -b sim                  # simulator, no hardware needed
 webpulse -b sim -w web           # serve web/ from disk while editing the UI
 ```
@@ -119,6 +119,27 @@ in the status bar step cursor A (Shift: B) like `[` / `]`.
 Behind code-server, run the daemon in the container and open
 `https://<code-server>/proxy/9002/`. The UI uses only relative URLs, so it
 works under that path prefix.
+
+## Remote access
+
+By default WebPulse only listens on this computer. With `--listen 0.0.0.0` (or
+an address of one of its network interfaces) other computers can connect, and
+then need an access token. WebPulse makes a random one at start-up and prints
+the address to open:
+
+```
+WebPulse 0.1.0 listening on port 9002  (Ctrl+C to quit)
+  on this computer:  http://localhost:9002/
+  from elsewhere:    http://<this-computer>:9002/?token=930b25a523cc8bb39041ac3f524115ba
+```
+
+Opening that address once stores the token in a cookie for that browser, and
+the page reloads without it in the address bar. Without the token, a page
+asks for it and the API answers 401. Connections from this computer itself
+never need it. `--token TOKEN` sets a fixed token (8 to 64 characters, for
+example for a bookmark); `--no-auth` turns the check off. The connection is
+plain HTTP, so use it on a network you trust, and allow the port through the
+firewall.
 
 ## Files
 
