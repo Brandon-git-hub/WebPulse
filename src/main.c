@@ -48,7 +48,7 @@ typedef struct {
     const char *decoders;
     const char *token;
     int no_auth;
-    int browser;                /* open the UI in the default browser */
+    int no_browser;             /* do not open the UI in the default browser */
     double sim_speed;
     uint64_t max_samples;
 
@@ -77,7 +77,8 @@ static void usage(FILE *f)
         "      --token TOKEN        access token for other computers (default: a random\n"
         "                           one when --listen is not local; it is printed)\n"
         "      --no-auth            no access token, anyone who can reach the port may use it\n"
-        "      --browser            open the UI in the default web browser once started\n"
+        "      --no-browser         do not open the UI in the default web browser\n"
+        "                           (it is opened once started; on Linux only with a desktop)\n"
         "  -p, --port N             HTTP port (default 9002; if it is taken and -p is\n"
         "                           not given, the next free one up to 9011)\n"
         "  -w, --web-root DIR       serve the UI from DIR instead of the embedded copy\n"
@@ -152,7 +153,9 @@ static int parse_args(int argc, char **argv, options *o)
         } else if (strcmp(a, "--token") == 0) {
             if (need_arg(argc, argv, &i, &o->token)) return -1;
         } else if (strcmp(a, "--browser") == 0) {
-            o->browser = 1;
+            o->no_browser = 0;          /* the default since 0.2.2; kept for old shortcuts */
+        } else if (strcmp(a, "--no-browser") == 0) {
+            o->no_browser = 1;
         } else if (strcmp(a, "--no-auth") == 0) {
             o->no_auth = 1;
         } else if (IS("-d", "--decoders")) {
@@ -401,6 +404,19 @@ static int run_capture(wp_engine *e, const options *o)
     return rc;
 }
 
+/* Whether there is a desktop to open a browser on: always on Windows; on
+ * Linux only with an X11 or Wayland session (not on a server or in a
+ * container, where trying would only print a warning). */
+static int have_desktop(void)
+{
+#ifdef _WIN32
+    return 1;
+#else
+    const char *x = getenv("DISPLAY"), *w = getenv("WAYLAND_DISPLAY");
+    return (x && *x) || (w && *w);
+#endif
+}
+
 /* Open url in the default browser; failures only print a note. */
 static void open_browser(const char *url)
 {
@@ -488,7 +504,7 @@ static int run_server(wp_engine *e, const options *o)
             fprintf(stderr, "  from elsewhere:    http://%s:%d/  (no access token: --no-auth)\n",
                     host, wp_server_port(srv));
     }
-    if (o->browser) {
+    if (!o->no_browser && have_desktop()) {
         /* This computer never needs the token, so the local address will do. */
         char url[96];
         snprintf(url, sizeof(url), "http://%s:%d/",

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- The UI opens in the default browser by default (Windows, and Linux desktop
+  sessions); `--no-browser` turns it off. `--browser` is still accepted.
+- Releases no longer include the CI screenshots as assets.
+
 ## 0.2.1
 
 - `--browser` opens the UI in the default browser once the server is up.

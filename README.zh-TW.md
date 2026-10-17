@@ -75,12 +75,15 @@ cmake --build build/win
 ## 執行
 
 ```bash
-webpulse                         # FX2 後端，介面在 http://127.0.0.1:9002/
-webpulse --browser               # ……並用預設瀏覽器開啟
+webpulse                         # FX2 後端，介面在 http://127.0.0.1:9002/，並用瀏覽器開啟
+webpulse --no-browser            # ……不開啟瀏覽器
 webpulse --listen 0.0.0.0        # 允許其他電腦的瀏覽器連線（見「遠端存取」）
 webpulse -b sim                  # 模擬裝置，不需要硬體
 webpulse -b sim -w web           # 修改介面時，直接從磁碟提供 web/ 的檔案
 ```
+
+啟動後，WebPulse 會用預設瀏覽器開啟介面（Linux 上只在有桌面環境時開啟，在 server 或 container
+裡不會）。從終端機執行等不需要開瀏覽器的情況，可以加 `--no-browser` 關閉。
 
 如果 9002 被佔用（有些編輯器或工具會用這個 port），WebPulse 會改用下一個可用的 port（最多到
 9011），並印出實際的網址。用 `-p PORT` 指定時就只用那個 port，無法使用時會停止並說明原因。
@@ -211,8 +214,8 @@ sample 的編號；到擷取結束都沒有符合的 sample 時，解碼就會�
    `VID_04B4&PID_8613`。
 2. 用 [Zadig](https://zadig.akeo.ie/) 幫這個裝置安裝 **WinUSB** 驅動。WebPulse 上傳韌體後，板子會
    重新連線成 `0925:3881`；如果 Zadig 顯示這個 ID 還沒有 WinUSB，也要幫它安裝。
-3. 執行 `webpulse.exe`，開啟它印出的網址，通常是 http://127.0.0.1:9002/ （在 Windows Terminal 裡
-   可以按住 Ctrl 點擊）。想要自動開啟瀏覽器的話，建立一個 `webpulse.exe --browser` 的捷徑。
+3. 雙擊 `webpulse.exe`：瀏覽器會自動開啟它印出的網址，通常是 http://127.0.0.1:9002/。
+   關閉主控台視窗就會結束 WebPulse。
 
 WebPulse 開啟板子時（啟動時，或板子之後才接上時的下一次 Run），會把
 `firmware/fx2lafw-saleae-logic.fw` 上傳到板子的 RAM，大約需要 1–2 秒。
