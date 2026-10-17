@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1
 
 - `--browser` opens the UI in the default browser once the server is up.
 - README in Traditional Chinese (`README.zh-TW.md`), screenshots and an
