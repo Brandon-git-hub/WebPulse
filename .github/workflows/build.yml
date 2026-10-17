@@ -140,11 +140,13 @@ jobs:
           grep -q -- "-DWP_HAVE_FX2=1" build/win/build.ninja
 
       - name: Check the executable is self-contained
+        # Only DLLs that are part of Windows itself (10 and later) are allowed,
+        # so nothing has to be installed next to webpulse.exe.
         run: |
           deps=$("$TOOLS_ROOT/mingw-w64/current/bin/llvm-objdump" -p build/win/webpulse.exe \
                  | awk '/DLL Name/ {print $3}' | sort)
           echo "$deps"
-          if echo "$deps" | grep -viE '^(KERNEL32|WS2_32|api-ms-win-crt-.*)\.dll$'; then
+          if echo "$deps" | grep -viE '^(KERNEL32|WS2_32|SHELL32|api-ms-win-crt-.*)\.dll$'; then
             echo "unexpected DLL dependency" >&2
             exit 1
           fi
