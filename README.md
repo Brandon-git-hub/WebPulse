@@ -7,6 +7,10 @@ analyzers built around the Cypress FX2 (CY7C68013A) or the compatible
 CBM9002A. A small C program captures the data and serves a browser UI. It is
 a lightweight alternative to PulseView.
 
+```
+FX2 board ──USB──▶ webpulse (C: libusb + CivetWeb) ──HTTP/WebSocket──▶ browser
+```
+
 ![WebPulse decoding UART and SPI, with cursors on an SPI burst and the PWM channel measured](docs/images/overview-dark.png)
 
 **Contents:**
@@ -96,7 +100,8 @@ After unpacking, keep the `firmware/` folder next to the executable.
    warning appears, click **More info → Run anyway**.
 2. **Install WinUSB.** Plug in the board and run
    [Zadig](https://zadig.akeo.ie/). Select the device with ID `0925:3881` or
-   `04B4:8613` and install **WinUSB**.
+   `04B4:8613` and install **WinUSB**. If the device is not in the list, choose
+   **Options → List All Devices**.
 3. **Install WinUSB for the second ID if needed.** After WebPulse uploads the
    firmware, the board reconnects as `0925:3881`. If Zadig shows that ID
    without WinUSB, install WinUSB for it as well. This is needed only once.

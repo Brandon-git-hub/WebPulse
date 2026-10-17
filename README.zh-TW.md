@@ -4,6 +4,10 @@
 
 WebPulse 是一套適用於 Cypress FX2（CY7C68013A）或相容晶片 CBM9002A 的 8 通道邏輯分析儀軟體，支援市面上常見的平價 24 MHz USB 邏輯分析儀。由輕量的 C 程式負責擷取資料，並以瀏覽器作為操作介面，定位為 PulseView 的輕量化替代方案。
 
+```
+FX2 裝置 ──USB──▶ webpulse (C: libusb + CivetWeb) ──HTTP/WebSocket──▶ 瀏覽器
+```
+
 ![WebPulse 解碼 UART 與 SPI，游標標示 SPI 傳輸區段，並即時量測 PWM 通道](docs/images/overview-dark.png)
 
 **目錄：**
@@ -78,7 +82,7 @@ WebPulse 隨附 fx2lafw 韌體，每次開啟裝置時會將韌體載入裝置�
 **Windows**
 
 1. **解除封鎖：** 由於 `webpulse.exe` 沒有程式碼簽章，Windows SmartScreen 可能會顯示「無法辨識的應用程式」警告。請在解壓縮**之前**，於 zip 檔按右鍵 →「**內容**」→ 勾選「**解除封鎖**」；或在出現警告時點選「**其他資訊 → 仍要執行**」。
-2. **安裝 WinUSB：** 接上裝置後執行 [Zadig](https://zadig.akeo.ie/)，選擇 ID 為 `0925:3881` 或 `04B4:8613` 的裝置，安裝 **WinUSB** 驅動程式。
+2. **安裝 WinUSB：** 接上裝置後執行 [Zadig](https://zadig.akeo.ie/)，選擇 ID 為 `0925:3881` 或 `04B4:8613` 的裝置，安裝 **WinUSB** 驅動程式。若下拉選單中找不到裝置，請點選頂部選單的「**Options → List All Devices**」。
 3. **必要時為第二個 ID 安裝 WinUSB：** WebPulse 載入韌體後，裝置會以 `0925:3881` 重新連線。若 Zadig 顯示此 ID 尚未安裝 WinUSB，請再安裝一次。此步驟只需執行一次。
 
 **Linux**
