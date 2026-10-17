@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.2
 
 - The UI opens in the default browser by default (Windows, and Linux desktop
   sessions); `--no-browser` turns it off. `--browser` is still accepted.

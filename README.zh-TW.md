@@ -130,7 +130,7 @@ duty，波形上也會標出這個脈衝。狀態列的 Edge ◀ ▶ 按鈕和 `
 access token。WebPulse 啟動時會產生一組隨機 token，並印出要開啟的網址：
 
 ```
-WebPulse 0.2.1 listening on port 9002  (Ctrl+C to quit)
+WebPulse 0.2.2 listening on port 9002  (Ctrl+C to quit)
   on this computer:  http://localhost:9002/
   from elsewhere:    http://<this-computer>:9002/?token=930b25a523cc8bb39041ac3f524115ba
 ```
