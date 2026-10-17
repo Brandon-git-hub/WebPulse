@@ -181,8 +181,11 @@ jobs:
             on' CHANGELOG.md > notes.md
           test -s notes.md || { echo "no CHANGELOG.md section for $VERSION" >&2; exit 1; }
 
+      # Only the packages: other artifacts (browser-check screenshots) are
+      # for looking at a CI run, not for the release.
       - uses: actions/download-artifact@v4
         with:
+          pattern: webpulse-*
           path: dist
           merge-multiple: true
 
