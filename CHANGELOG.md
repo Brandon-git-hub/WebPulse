@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `--browser` opens the UI in the default browser once the server is up.
+
 ## 0.2.0
 
 - Protocol decoders: UART, SPI, I²C, Parallel and Counter, shown as rows

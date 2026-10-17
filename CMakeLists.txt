@@ -84,6 +84,9 @@ add_executable(webpulse src/main.c src/server.c ${WP_WEB_ASSETS_C})
 target_compile_options(webpulse PRIVATE ${WP_WARNINGS})
 target_compile_definitions(webpulse PRIVATE WP_VERSION="${PROJECT_VERSION}")
 target_link_libraries(webpulse PRIVATE wpcore civetweb)
+if(WIN32)
+    target_link_libraries(webpulse PRIVATE shell32)     # ShellExecute for --browser
+endif()
 
 # Ship the firmware next to the executable.
 add_custom_command(TARGET webpulse POST_BUILD

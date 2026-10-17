@@ -70,6 +70,7 @@ Copy `webpulse.exe` together with the `firmware/` folder next to it.
 
 ```bash
 webpulse                         # fx2 backend, UI on http://127.0.0.1:9002/
+webpulse --browser               # ...and open it in the default browser
 webpulse --listen 0.0.0.0        # allow remote browsers (see "Remote access")
 webpulse -b sim                  # simulator, no hardware needed
 webpulse -b sim -w web           # serve web/ from disk while editing the UI
@@ -222,7 +223,8 @@ made before the error are kept.
    WebPulse uploads the firmware, the board reconnects as `0925:3881`. If Zadig
    then shows that ID without WinUSB, install WinUSB for it as well.
 3. Run `webpulse.exe`, then open the address it prints, normally
-   http://127.0.0.1:9002/.
+   http://127.0.0.1:9002/ (in Windows Terminal, Ctrl+click it). To have the
+   browser open by itself, make a shortcut to `webpulse.exe --browser`.
 
 When WebPulse opens the board (at start-up, or on the next Run if the board was
 plugged in later), it uploads `firmware/fx2lafw-saleae-logic.fw` to the board's
