@@ -2,132 +2,182 @@
 
 [English](README.md) · 繁體中文
 
-![WebPulse 解碼 UART 與 SPI，游標放在 SPI 傳輸的頭尾，並即時量測 PWM](docs/images/overview-dark.png)
+WebPulse 是一套適用於 Cypress FX2（CY7C68013A）或相容晶片 CBM9002A 的 8 通道邏輯分析儀軟體，支援市面上常見的平價 24 MHz USB 邏輯分析儀。由輕量的 C 程式負責擷取資料，並以瀏覽器作為操作介面，定位為 PulseView 的輕量化替代方案。
 
-WebPulse 是給 Cypress FX2 板子用的 8 通道邏輯分析儀軟體，例如燒了 sigrok fx2lafw 韌體的
-WeAct LogicAnalyzerV1／CBM9002A。它想當 PulseView 比較輕量的替代品：一個小小的 C 程式負責
-擷取，並提供在瀏覽器用 canvas 畫波形的介面。
+![WebPulse 解碼 UART 與 SPI，游標標示 SPI 傳輸區段，並即時量測 PWM 通道](docs/images/overview-dark.png)
 
-```
-FX2 板子 ──USB──▶ webpulse（C：libusb + CivetWeb）──HTTP／WebSocket──▶ 瀏覽器
-```
+**目錄：**
+- [支援硬體](#支援硬體)
+- [功能特色](#功能特色)
+- [快速開始](#快速開始)
+- [操作說明](#操作說明)
+- [命令列](#命令列)
+- [遠端存取](#遠端存取)
+- [協定解碼器](#協定解碼器)
+- [從原始碼編譯](#從原始碼編譯)
+- [HTTP 與 WebSocket API](#http-與-websocket-api)
+- [授權](#授權)
 
-- 定長擷取，最高 24 MHz；軟體觸發（每個通道可設位準或邊緣條件），pre-trigger 比例可調。
-- 協定解碼器（UART、SPI、I²C、並列匯流排、計數器），也能用 JavaScript 寫自己的解碼器。
-- 開啟／儲存 sigrok／PulseView 的 session 檔（`.sr`）；匯出 VCD、CSV、PNG。
-- 瀏覽器只向伺服器要目前畫面上的那一段。不論擷取多長，每次回應約為每像素 2 bytes，
-  256M samples 的擷取也能在 1 ms 內回應。
-- 介面內建在單一執行檔裡，Windows 版不需要另外安裝任何 DLL。
-- 內建模擬裝置，沒有硬體也能開發和測試所有功能。
+## 支援硬體
 
-## 截圖
+<img src="docs/images/LOGIC_8.jpg" alt="24 MHz 8 通道 USB 邏輯分析儀與腳位標示" width="480">
 
-雙擊從整段擷取一路放大到單一 byte，再放上會吸附邊緣的游標，並即時量測滑鼠所在的訊號：
+支援以下硬體：
 
-![雙擊放大、放游標與量測](docs/images/demo.png)
+- 外殼標示為「Logic Analyzer 24MHz 8CH」的 USB 邏輯分析儀（如上圖）
+- WeAct LogicAnalyzerV1 及其他 CBM9002A 板
+- 其他可執行 sigrok **fx2lafw** 韌體的 FX2 板
+
+WebPulse 隨附 fx2lafw 韌體，每次開啟裝置時會將韌體載入裝置的 RAM，不會寫入 EEPROM。
+
+| USB ID | 出現時機 |
+|---|---|
+| `0925:3881` | EEPROM 已燒錄的裝置，或任何裝置載入韌體之後 |
+| `04B4:8613` | EEPROM 空白的裝置（原廠 Cypress FX2） |
+
+**接線：** 外殼標示從 1 開始編號，WebPulse 介面則從 0 開始：
+
+| 外殼標示 | CH1 | CH2 | CH3 | CH4 | CH5 | CH6 | CH7 | CH8 | GND | CLK |
+|---|---|---|---|---|---|---|---|---|---|---|
+| WebPulse | CH0 | CH1 | CH2 | CH3 | CH4 | CH5 | CH6 | CH7 | 接地 | 不使用 |
+
+量測時務必將 GND 連接至待測電路的地。輸入為 3.3 V 邏輯準位；多數此類裝置也可耐受 5 V，但仍請先確認您的裝置規格。
+
+## 功能特色
+
+- **擷取：** 固定長度擷取，最高 24 MHz。支援軟體觸發，每個通道可設定準位或邊緣條件，觸發前資料比例可調整。
+- **長時間擷取依然流暢：** 瀏覽器僅向伺服器請求目前檢視範圍的資料，每次回應約為每像素 2 bytes，與擷取長度無關；即使是 2.56 億個取樣點，也能在 1 ms 內回應。
+- **量測：** 游標會自動吸附訊號邊緣；滑鼠所在的脈衝會即時量測高準位時間、低準位時間、週期、頻率與工作週期（Duty Cycle）。
+- **協定解碼：** 內建 UART、SPI、I²C、並列匯流排與邊緣計數器，也能以 JavaScript 撰寫自訂解碼器。
+- **檔案：** 可開啟與儲存 sigrok / PulseView 工作階段檔（`.sr`），並可匯出 VCD、CSV、PNG。
+- **部署簡單：** 單一執行檔即包含完整介面，Windows 版不需要額外安裝 DLL。內建模擬裝置，沒有硬體也能體驗所有功能。
+
+從整段擷取逐步放大至單一位元組，接著放置游標並進行量測：
+
+![雙擊放大、放置游標與量測](docs/images/demo.png)
 
 | 淺色主題 | 解碼器設定 | 通道選擇 |
 |---|---|---|
 | ![淺色主題](docs/images/overview-light.png) | ![解碼器設定](docs/images/decoder-editor.png) | ![通道選擇](docs/images/channels.png) |
 
-這些圖片由 `tools/docshots.mjs` 從模擬裝置產生（見「測試」）。
+## 快速開始
 
-## 下載
+### 1. 下載
 
-GitHub 的 Releases 頁面有編譯好的套件：
+請至 [Releases](https://github.com/Brandon-git-hub/WebPulse/releases) 頁面下載對應系統的套件：
 
-- `webpulse-<版本>-win64.zip`：Windows 10／11 x64，只有一個 `webpulse.exe`，不用另外安裝 DLL
-- `webpulse-<版本>-linux-x86_64.tar.gz`：Linux x86_64，libusb 已靜態連結，需要 glibc 2.35 以上
-
-解壓縮後，`firmware/` 資料夾要和執行檔放在一起。
-
-## 編譯
-
-Linux（開發與測試用；pkg-config 找得到 libusb-1.0 時會編入 FX2 後端，否則只有模擬裝置）：
-
-```bash
-cmake -S . -B build/linux -G Ninja
-cmake --build build/linux
-ctest --test-dir build/linux
-```
-
-不需要 udev 的 libusb 就夠用，在 container 裡也能使用。自行編譯靜態版的方法：
-
-```bash
-./configure --prefix=$HOME/libusb-linux --disable-udev --enable-static --disable-shared CFLAGS="-O2 -fPIC"
-make install
-export PKG_CONFIG_PATH=$HOME/libusb-linux/lib/pkgconfig
-```
-
-如果 `PKG_CONFIG_PATH` 裡也有 MinGW sysroot 的路徑，要把 Linux 的目錄放在前面。兩邊都有
-`libusb-1.0.pc`，pkg-config 會用第一個找到的。
-
-Windows（在 Linux 上用 llvm-mingw 交叉編譯，toolchain 放在 `/mnt/ssd/tools`）：
-
-```bash
-cmake -S . -B build/win -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64-x86_64.cmake
-cmake --build build/win
-# -> build/win/webpulse.exe + build/win/firmware/
-```
-
-把 `webpulse.exe` 和旁邊的 `firmware/` 資料夾一起複製過去。
-
-## 執行
-
-```bash
-webpulse                         # FX2 後端，介面在 http://127.0.0.1:9002/，並用瀏覽器開啟
-webpulse --no-browser            # ……不開啟瀏覽器
-webpulse --listen 0.0.0.0        # 允許其他電腦的瀏覽器連線（見「遠端存取」）
-webpulse -b sim                  # 模擬裝置，不需要硬體
-webpulse -b sim -w web           # 修改介面時，直接從磁碟提供 web/ 的檔案
-```
-
-啟動後，WebPulse 會用預設瀏覽器開啟介面（Linux 上只在有桌面環境時開啟，在 server 或 container
-裡不會）。從終端機執行等不需要開瀏覽器的情況，可以加 `--no-browser` 關閉。
-
-如果 9002 被佔用（有些編輯器或工具會用這個 port），WebPulse 會改用下一個可用的 port（最多到
-9011），並印出實際的網址。用 `-p PORT` 指定時就只用那個 port，無法使用時會停止並說明原因。
-
-不開介面的單次擷取，以及轉檔：
-
-```bash
-webpulse -c -r 24M -n 10M -t XXXXXXXR --pre 10 -o capture.vcd
-webpulse --open capture.sr -o capture.vcd       # .sr -> .vcd / .csv / .sr
-webpulse --open capture.sr                       # 在介面中顯示檔案
-```
-
-觸發條件是 8 個字元，每個通道一個，第 *i* 個字元對應 CH*i*：`X` 不在意、`0`／`1` 位準、`R` 上升、
-`F` 下降、`E` 任一邊緣。所有條件必須同時成立（AND）。`--channels 0-3,6` 讓輸出檔只包含這些通道。
-所有選項請看 `webpulse --help`。
-
-在介面中，**Channels** 按鈕會開啟類似 PulseView 的通道選擇面板：可以逐一勾選，或依 *All*、
-*Changing*、*Non-changing*（在目前的擷取裡有沒有變化）、*Named*、*Unnamed*（是否改過預設的
-`CHn` 名稱）批次啟用或停用。隱藏的通道不參與觸發，也不會匯出到 VCD／CSV，但 8 個通道仍然都會擷取。
-
-| 滑鼠／按鍵 | 功能 |
+| 檔案 | 適用系統 |
 |---|---|
-| 左鍵雙擊／右鍵雙擊 | 以滑鼠位置放大／縮小 2 倍（按住 Ctrl：8 倍） |
-| 左鍵拖曳 | 平移 |
-| Shift＋左鍵／Shift＋右鍵 | 放游標 A／B（按住可拖曳）；8 px 內有邊緣時會吸附，按住 Alt 不吸附 |
-| `[` `]`／`{` `}` | 游標 A／B 跳到反白通道的上一個／下一個邊緣 |
-| 拖曳游標線 | 移動該游標 |
-| 滾輪 | 縮放（Shift＋滾輪平移） |
-| `+` `-` · `F` · `Z` · `Backspace` | 縮放 · 顯示全部 · 放大到 A↔B · 上一個畫面 |
-| `T` · `R` · `S` · `Esc` | 跳到觸發點 · 開始 · 停止 · 清除游標 |
+| `webpulse-<版本>-win64.zip` | Windows 10 / 11 x64，不需要安裝 DLL |
+| `webpulse-<版本>-linux-x86_64.tar.gz` | Linux x86_64，需要 glibc 2.35 以上；已靜態連結 libusb |
 
-工具列也有相同的放大／縮小、Fit、A↔B、Back 按鈕。
+解壓縮後，請將 `firmware/` 資料夾與執行檔放在同一個目錄。
 
-滑鼠所在的通道列會反白並即時量測：狀態列顯示滑鼠所在脈衝的高／低電位時間、週期、頻率和
-duty，波形上也會標出這個脈衝。狀態列的 Edge ◀ ▶ 按鈕和 `[`／`]` 一樣，會移動游標 A（按住 Shift
-則是 B）。
+### 2. 安裝驅動程式
 
-在 code-server 後面使用時，在 container 裡執行 daemon，再開啟 `https://<code-server>/proxy/9002/`。
-介面只使用相對網址，所以在這種路徑前綴下也能正常運作。
+**Windows**
+
+1. **解除封鎖：** 由於 `webpulse.exe` 沒有程式碼簽章，Windows SmartScreen 可能會顯示「無法辨識的應用程式」警告。請在解壓縮**之前**，於 zip 檔按右鍵 →「**內容**」→ 勾選「**解除封鎖**」；或在出現警告時點選「**其他資訊 → 仍要執行**」。
+2. **安裝 WinUSB：** 接上裝置後執行 [Zadig](https://zadig.akeo.ie/)，選擇 ID 為 `0925:3881` 或 `04B4:8613` 的裝置，安裝 **WinUSB** 驅動程式。
+3. **必要時為第二個 ID 安裝 WinUSB：** WebPulse 載入韌體後，裝置會以 `0925:3881` 重新連線。若 Zadig 顯示此 ID 尚未安裝 WinUSB，請再安裝一次。此步驟只需執行一次。
+
+**Linux**
+
+建立 udev 規則讓一般使用者可以存取裝置，例如 `/etc/udev/rules.d/60-webpulse.rules`：
+
+```
+SUBSYSTEM=="usb", ATTR{idVendor}=="0925", ATTR{idProduct}=="3881", MODE="0666"
+SUBSYSTEM=="usb", ATTR{idVendor}=="04b4", ATTR{idProduct}=="8613", MODE="0666"
+```
+
+接著執行 `sudo udevadm control --reload && sudo udevadm trigger`，並重新插拔裝置。
+
+> **Docker：** 載入韌體後，裝置會以新的裝置編號重新出現，因此請掛載整個 USB 目錄，而非單一裝置節點：
+> `-v /dev/bus/usb:/dev/bus/usb --device-cgroup-rule='c 189:* rmw'`。
+> udev 規則請設定在主機端，容器內不需要 udev。
+
+### 3. 啟動
+
+在 Windows 上雙擊 `webpulse.exe`，或在 Linux 上執行 `./webpulse`。瀏覽器會自動開啟程式所顯示的網址，通常為 http://localhost:9002/。關閉主控台視窗或按 Ctrl+C 即可結束 WebPulse。
+
+在工具列選擇取樣率與取樣點數，再點選 **Run** 開始擷取。第一次開啟裝置時，載入韌體約需 1 至 2 秒。
+
+還沒有硬體嗎？執行 `webpulse -b sim` 即可啟動模擬裝置，產生 UART、SPI、PWM 等測試訊號。
+
+## 操作說明
+
+### 滑鼠與鍵盤
+
+| 功能 | 滑鼠 / 按鍵 |
+|---|---|
+| 以滑鼠位置為中心放大 / 縮小 2 倍 | 左鍵 / 右鍵雙擊（按住 Ctrl 為 8 倍），或滾輪 |
+| 平移 | 左鍵拖曳，或 Shift + 滾輪 |
+| 顯示完整擷取 | `F` |
+| 放大至游標 A–B 區間 | `Z` |
+| 返回上一個檢視 | `Backspace` |
+| 放置游標 A / B | Shift + 左鍵 / Shift + 右鍵；按住不放可拖曳 |
+| 游標 A 移至上一個 / 下一個邊緣 | `[` / `]`（游標 B 為 `{` / `}`） |
+| 跳至觸發點 | `T` |
+| 開始 / 停止 / 清除游標 | `R` / `S` / `Esc` |
+
+工具列也提供相同功能的放大、縮小、Fit、A↔B 與 Back 按鈕。
+
+游標會自動吸附 8 px 範圍內的邊緣；放置時按住 Alt 可停用吸附。邊緣導覽以滑鼠所在、目前反白的通道為準。
+
+### 即時量測
+
+滑鼠所在的通道列會反白，狀態列即時顯示該處脈衝的高準位時間、低準位時間、週期、頻率與工作週期，波形上也會標示出該脈衝。狀態列的 Edge ◀ ▶ 按鈕與 `[`、`]` 相同，可移動游標 A（按住 Shift 則移動游標 B）。
+
+### 通道
+
+**Channels** 按鈕會開啟與 PulseView 類似的通道選擇面板，可逐一顯示或隱藏通道，也能依下列分類批次操作：
+
+| 分類 | 包含的通道 |
+|---|---|
+| All | 所有通道 |
+| Changing / Non-changing | 目前擷取中有 / 沒有訊號變化的通道 |
+| Named / Unnamed | 已修改 / 未修改預設名稱 `CHn` 的通道 |
+
+隱藏的通道不參與觸發，也不會匯出至檔案；硬體仍會擷取全部 8 個通道。拖曳通道列左側的握把可調整通道順序，在面板中按 **Reset order** 即可恢復為 CH0 … CH7。
+
+### 檔案
+
+| 按鈕 | 功能 |
+|---|---|
+| **Open**（或將檔案拖放至網頁） | 開啟 PulseView 或 sigrok-cli 儲存的工作階段檔，通道名稱沿用檔案設定；超過 8 個通道的檔案只載入前 8 個 |
+| **Save .sr** | 儲存為 PulseView 可開啟的工作階段檔，包含通道名稱，且只包含目前顯示的通道 |
+| **VCD** / **CSV** / **PNG** | 匯出擷取資料，或將目前畫面存成圖片 |
+
+## 命令列
+
+```bash
+webpulse                     # 使用 FX2 裝置，介面位於 http://localhost:9002/，並自動開啟瀏覽器
+webpulse --no-browser        # 不自動開啟瀏覽器
+webpulse -b sim              # 模擬裝置，不需要硬體
+webpulse --listen 0.0.0.0    # 允許其他電腦連線（請參閱「遠端存取」）
+```
+
+若 9002 埠已被佔用（部分編輯器會使用此埠），WebPulse 會依序嘗試下一個可用的埠，最多到 9011，並顯示實際網址。若以 `-p PORT` 指定埠號，則只使用該埠；無法使用時會停止並顯示原因。
+
+**不開啟介面，直接擷取或轉檔：**
+
+```bash
+webpulse -c -r 24M -n 10M -t XXXXXXXR --pre 10 -o capture.vcd   # 擷取並直接存檔
+webpulse --open capture.sr -o capture.csv                         # 將 .sr 轉為 .vcd / .csv / .sr
+webpulse --open capture.sr                                        # 在介面中開啟檔案
+```
+
+**觸發條件字串：** 共 8 個字元，第 *i* 個字元對應 CH*i*，所有條件必須同時成立（AND）。
+
+| 字元 | `X` | `0` | `1` | `R` | `F` | `E` |
+|---|---|---|---|---|---|---|
+| 條件 | 不限 | 低準位 | 高準位 | 上升邊緣 | 下降邊緣 | 任一邊緣 |
+
+`--channels 0-3,6` 可限制輸出檔只包含指定的通道。執行 `webpulse --help` 可查看所有選項。
 
 ## 遠端存取
 
-預設只在本機 listen。使用 `--listen 0.0.0.0`（或某張網卡的位址）時，其他電腦就能連線，但需要
-access token。WebPulse 啟動時會產生一組隨機 token，並印出要開啟的網址：
+WebPulse 預設只接受本機連線。使用 `--listen 0.0.0.0`（或本機某個網路介面的位址）後，其他電腦即可連線，但需要存取權杖（Access Token）。WebPulse 啟動時會產生一組隨機權杖，並顯示連線網址：
 
 ```
 WebPulse 0.2.2 listening on port 9002  (Ctrl+C to quit)
@@ -135,46 +185,44 @@ WebPulse 0.2.2 listening on port 9002  (Ctrl+C to quit)
   from elsewhere:    http://<this-computer>:9002/?token=930b25a523cc8bb39041ac3f524115ba
 ```
 
-用這個網址開過一次之後，瀏覽器會用 cookie 記住 token，網址列裡的 token 也會自動移除。沒有
-token 時，網頁會要求輸入，API 則回傳 401。從本機連線不需要 token。`--token TOKEN` 可以指定
-固定的 token（8 到 64 個字元，方便加入書籤）；`--no-auth` 則關閉驗證。連線是一般的 HTTP，
-請在信任的網路中使用，並在防火牆開放這個 port。
+- 以此網址開啟一次後，瀏覽器會以 Cookie 保存權杖，並自動從網址列移除。
+- 未提供權杖時，網頁會要求輸入權杖，API 則回應 401。從本機連線不需要權杖。
+- `--token TOKEN` 可指定固定權杖（8 至 64 個字元，方便加入書籤）；`--no-auth` 則停用驗證。
+- 連線採用未加密的 HTTP，請僅在信任的網路中使用，並於防火牆開放對應的埠。
 
-## 檔案
-
-**Open**（或把檔案拖進網頁）會開啟 PulseView 或 sigrok-cli 存的 sigrok session 檔；通道名稱沿用
-檔案裡的設定，檔案中沒有的通道會隱藏。**Save .sr** 會存成 PulseView 能開啟的檔案，包含通道名稱，
-而且只包含目前顯示的通道；觸發位置會保留給 WebPulse 使用。超過 8 個通道的檔案只載入前 8 個。
-開啟檔案會取代目前的擷取。
+若在 code-server 環境中使用，請在容器內執行 WebPulse，並開啟 `https://<code-server>/proxy/9002/`。由於介面只使用相對路徑，在此路徑前綴下也能正常運作。
 
 ## 協定解碼器
 
-工具列的 **Decoders** 可以在通道下方加入解碼器：UART、SPI、I²C、Parallel（最多 8 條線組成的匯流排
-數值，可選擇是否有時脈）和 Counter（為一條線的邊緣編號）。每個解碼器都有自己的通道對應和選項，
-點它的列名稱就能修改。滑鼠移到註解上，狀態列會顯示完整內容。解碼器在瀏覽器中執行，只處理用到的
-通道的跳變點，所以即使是 256M samples 的擷取，也大約一秒就能解完。
+點選工具列的 **Decoders** 可在通道下方加入解碼器：
 
-新增解碼器時會依通道名稱自動對應，例如通道命名為「SCLK」或「SDA」，就會對到 SPI 的 CLK 或
-I²C 的 SDA。
+| 解碼器 | 說明 |
+|---|---|
+| UART | 非同步序列資料 |
+| SPI | CLK、MOSI、MISO、CS |
+| I²C | SCL、SDA；位址、資料與 ACK / NACK |
+| Parallel | 由最多 8 個通道組成的匯流排數值，可選擇是否使用時脈 |
+| Counter | 為通道的每個邊緣編號 |
 
-### 自己寫解碼器
+- 新增解碼器時，會依通道名稱自動指派輸入。例如命名為 `SCLK` 的通道會指派給 SPI 的 CLK，命名為 `SDA` 的通道會指派給 I²C 的 SDA。
+- 點選解碼器的列名稱，即可修改通道指派與選項。
+- 將滑鼠移至協定解碼標註上，狀態列會顯示完整內容。
+- 解碼器在瀏覽器中執行，且只處理所使用通道的訊號轉換點，因此即使是 2.56 億個取樣點的擷取，也約在一秒內完成解碼。
 
-解碼器是一個 JavaScript 模組，放在執行檔旁的 `decoders/` 資料夾（或用 `--decoders DIR` 指定的
-資料夾）。新增或修改後，在 Decoders 面板按 **Reload** 即可，不必重新啟動。`decoders/pwm.js` 是
-簡短的範例，`web/decoders/` 裡的內建解碼器則是較完整的例子。
+### 撰寫自訂解碼器
+
+自訂解碼器是一個 JavaScript 模組，放在執行檔旁的 `decoders/` 資料夾（或以 `--decoders DIR` 指定的資料夾）。新增或修改後，在 Decoders 面板點選 **Reload** 即可載入，不需重新啟動 WebPulse。`decoders/pwm.js` 是簡短的範例，`web/decoders/` 中的內建解碼器則是完整的參考實作。
 
 ```js
 export default {
   id: 'pwm',
   name: 'PWM',
-  desc: 'Duty cycle of each period',                  // 選填
-  channels: [{ id: 'pwm', name: 'PWM' }],              // optional: true 表示選填的線；
-                                                       // auto: true 表示新增時也自動指派這條選填的線；
-                                                       // aliases: ['sck'] 其他可對應的通道名稱
+  desc: 'Duty cycle of each period',                  // 選用
+  channels: [{ id: 'pwm', name: 'PWM' }],              // 輸入通道，欄位說明見下表
   options: [{ id: 'active', name: 'Active level', default: 'high', values: ['high', 'low'] }],
-  rows: [{ id: 'duty', name: 'Duty' }],                // 註解列，由上而下
+  rows: [{ id: 'duty', name: 'Duty' }],                // 標註列，由上而下排列
 
-  *decode(d, o) {                                      // o = 各選項的值
+  *decode(d, o) {                                      // o 為各選項的設定值
     let start = yield d.wait({ pwm: 'r' });
     for (;;) {
       const mid = yield d.wait({ pwm: 'f' });
@@ -187,74 +235,105 @@ export default {
 };
 ```
 
-`decode` 是一個 generator。用 `yield d.wait(cond)` 要求下一個感興趣的 sample，yield 的結果就是那個
-sample 的編號；到擷取結束都沒有符合的 sample 時，解碼就會停止（`finally` 區塊裡的程式碼仍會執行，
-例如用來收尾一個持續到最後的註解）。
+**通道定義欄位：**
 
-| | |
+| 欄位 | 說明 |
 |---|---|
-| `{ rx: 'f' }` | 每個通道一個條件：`'r'` 上升、`'f'` 下降、`'e'` 任一邊緣、`'h'` 高電位、`'l'` 低電位；全部都要成立 |
-| `[{ clk: 'r' }, { cs: 'e' }]` | 其中一組成立即可；`d.matched[i]` 表示哪一組成立 |
-| `{ skip: n }`／`d.until(s)` | n 個 sample 之後（可以是小數）／第 s 個 sample |
-| `d.pins.rx` | 目前 sample 的值，0 或 1 |
-| `d.samplenum`、`d.rate`、`d.n` | 目前的 sample、取樣率（Hz）、擷取的 sample 數 |
-| `d.has('cs')` | 選填的通道是否有指派 |
-| `d.put(start, end, row, texts)` | 一個註解；`texts` 是字串，或由長到短的陣列，會顯示放得下的最長那個 |
-| `d.hex(v, bits)`、`d.bin`、`d.dec`、`d.oct`、`d.ascii(v)`、`d.format(v, bits, 'hex')` | 文字格式化工具 |
+| `optional: true` | 此輸入為選用，可不指派 |
+| `auto: true` | 新增解碼器時，也自動指派此選用輸入 |
+| `aliases: ['sck']` | 可對應此輸入的其他通道名稱 |
 
-等待一定會往前走：在目前 sample 就已成立的條件不算。解碼器拋出的錯誤會顯示在它的列上，錯誤
-之前產生的註解會保留。
+**解碼流程：** `decode` 是一個 generator 函式。`yield d.wait(cond)` 會等待下一個符合 `cond` 的取樣點，並回傳其取樣點索引。等待一律向後推進：在目前取樣點已成立的條件不會被視為符合。若直到擷取結束都沒有符合的取樣點，解碼即停止；`finally` 區塊中的程式碼仍會執行，可用於結束持續到最後的標註。
 
-## Windows 初次設定
+| API | 說明 |
+|---|---|
+| `{ rx: 'f' }` | 每個通道一個條件，須全部成立：`'r'` 上升、`'f'` 下降、`'e'` 任一邊緣、`'h'` 高準位、`'l'` 低準位 |
+| `[{ clk: 'r' }, { cs: 'e' }]` | 多組條件中任一組成立即可；`d.matched[i]` 表示哪一組成立 |
+| `{ skip: n }` | 往後 n 個取樣點（可為小數） |
+| `d.until(s)` | 取樣點索引 s |
+| `d.pins.rx` | 目前取樣點該通道的準位（0 或 1） |
+| `d.samplenum` / `d.rate` / `d.n` | 目前取樣點索引、取樣率（Hz）、擷取的總取樣點數 |
+| `d.has('cs')` | 選用輸入是否已指派 |
+| `d.put(start, end, row, texts)` | 新增一筆標註；`texts` 可為字串，或由長到短排列的陣列，會依顯示空間自動選用最長的文字 |
+| `d.hex(v, bits)`、`d.bin`、`d.dec`、`d.oct`、`d.ascii(v)`、`d.format(v, bits, 'hex')` | 數值格式化函式 |
 
-0. 因為 `webpulse.exe` 沒有程式碼簽章，Windows SmartScreen 可能會警告這是無法辨識的應用程式。
-   可以點「**其他資訊 → 仍要執行**」，或在解壓縮**之前**，在 zip 上按右鍵 →「**內容**」→ 勾選
-   「**解除封鎖**」，這樣解壓出來的檔案都不會被標記。
-1. 接上板子，打開裝置管理員。EEPROM 有燒錄的板子會顯示為 `VID_0925&PID_3881`，EEPROM 空白的則是
-   `VID_04B4&PID_8613`。
-2. 用 [Zadig](https://zadig.akeo.ie/) 幫這個裝置安裝 **WinUSB** 驅動。WebPulse 上傳韌體後，板子會
-   重新連線成 `0925:3881`；如果 Zadig 顯示這個 ID 還沒有 WinUSB，也要幫它安裝。
-3. 雙擊 `webpulse.exe`：瀏覽器會自動開啟它印出的網址，通常是 http://127.0.0.1:9002/。
-   關閉主控台視窗就會結束 WebPulse。
+解碼器拋出的錯誤會連同檔名與行號顯示在該解碼器的列上，錯誤發生前產生的標註會保留。
 
-WebPulse 開啟板子時（啟動時，或板子之後才接上時的下一次 Run），會把
-`firmware/fx2lafw-saleae-logic.fw` 上傳到板子的 RAM，大約需要 1–2 秒。
+## 從原始碼編譯
 
-## Linux 初次設定
+**Linux：** 若 pkg-config 找得到 libusb-1.0，會一併編譯 FX2 後端；否則只會編譯模擬裝置。
 
-用 udev rule 讓使用者能存取板子，例如 `/etc/udev/rules.d/60-webpulse.rules`：
-
-```
-SUBSYSTEM=="usb", ATTR{idVendor}=="0925", ATTR{idProduct}=="3881", MODE="0666"
-SUBSYSTEM=="usb", ATTR{idVendor}=="04b4", ATTR{idProduct}=="8613", MODE="0666"
+```bash
+cmake -S . -B build/linux -G Ninja
+cmake --build build/linux
+ctest --test-dir build/linux
 ```
 
-然後執行 `sudo udevadm control --reload && sudo udevadm trigger`，再重新插拔板子。
+不含 udev 支援的 libusb 即可使用，也適用於容器環境。靜態編譯 libusb 的方式：
 
-**在 Docker container 裡**，要掛載整個 USB 目錄，而不是單一裝置節點，因為板子上傳韌體後會以新的
-裝置編號重新出現：
+```bash
+./configure --prefix=$HOME/libusb-linux --disable-udev --enable-static --disable-shared CFLAGS="-O2 -fPIC"
+make install
+export PKG_CONFIG_PATH=$HOME/libusb-linux/lib/pkgconfig
+```
+
+若 `PKG_CONFIG_PATH` 同時包含 MinGW sysroot，請將 Linux 的目錄放在前面。兩者都有 `libusb-1.0.pc`，pkg-config 會使用第一個找到的檔案。
+
+**Windows：** 在 Linux 上使用 llvm-mingw 交叉編譯。工具鏈檔案會在 `$TOOLS_ROOT`（預設為 `/mnt/ssd/tools`）下尋找編譯工具。
+
+```bash
+cmake -S . -B build/win -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64-x86_64.cmake
+cmake --build build/win        # 產生 build/win/webpulse.exe 與 build/win/firmware/
+```
+
+從零開始的完整環境設定，請參考 `.github/workflows/build.yml`。
+
+### 測試
+
+| 測試 | 涵蓋範圍 |
+|---|---|
+| `ctest` | C 單元測試：觸發、資料儲存、FX2 協定、JSON、擷取引擎、VCD / CSV 匯出、ZIP / `.sr` 讀寫；找得到 Node.js 時也會執行解碼器測試 |
+| `tests/decoders_test.mjs` | 以程式產生的波形驗證解碼器執行環境與內建解碼器 |
+| `tests/web_smoke.mjs` | 在 Node 22+ 中以模擬 DOM 執行 `web/js/app.js`，並連線至執行中的伺服器 |
+| `tests/browser_check.mjs` | 以 headless Chrome（`$CHROME` 或 `chromium`）操作介面：檢查版面對齊、解碼器在 Web Worker 中執行、無 JavaScript 錯誤 |
+| `tools/docshots.mjs` | 重新產生 `docs/images` 中的 README 截圖 |
+
+`web_smoke.mjs`、`browser_check.mjs` 與 `docshots.mjs` 需要先啟動伺服器，請先執行模擬裝置：
+
+```bash
+./build/linux/webpulse -b sim -p 18080 -d decoders &
+node tests/web_smoke.mjs http://127.0.0.1:18080/
+```
+
+### 目錄結構
 
 ```
--v /dev/bus/usb:/dev/bus/usb --device-cgroup-rule='c 189:* rmw'
+src/          C11 程式：擷取引擎、觸發、資料儲存、裝置後端、HTTP 伺服器
+web/          網頁介面（純 ES modules，不需建置），編譯時嵌入執行檔
+  decoders/   內建協定解碼器
+  js/decode/  解碼器執行環境
+decoders/     自訂解碼器範例，編譯時複製到執行檔旁
+tests/        單元測試、解碼器測試、smoke test、瀏覽器測試
+tools/        embed_web.py、package.py（打包 Release）、docshots.mjs（README 截圖）
+cmake/        Windows 交叉編譯工具鏈
+firmware/     fx2lafw-saleae-logic.fw（GPLv2+，執行時載入）
+third_party/  CivetWeb 1.16（MIT）
 ```
 
-udev rule 放在 host 上。container 裡不需要 udev：WebPulse 上傳韌體後會以輪詢的方式等待板子重新出現。
+## HTTP 與 WebSocket API
 
-## HTTP／WebSocket API
-
-| 方法 | 路徑 | |
+| 方法 | 路徑 | 說明 |
 |---|---|---|
-| GET | `/api/device` | 後端類型、型號、韌體、支援的取樣率、最大 sample 數 |
-| POST | `/api/capture` | `{"rate":24000000,"samples":10000000,"pre":0.1,"trigger":"XXXXXXXR","timeout_ms":0}` |
-| POST | `/api/stop` | 停止；觸發後已擷取的資料會保留 |
-| GET | `/api/status` | `idle / armed / capturing / processing / done / error` 與進度；`capture.changing` 是有變化的通道遮罩 |
-| GET | `/api/export?fmt=vcd\|csv\|sr[&names=a,b,…][&channels=0-3,6][&changes=0]` | 下載擷取資料（`channels`：要包含的通道，預設全部） |
-| POST | `/api/open?name=FILE.sr` | body 是 sigrok session 檔，會成為目前的擷取 |
-| GET | `/api/transitions?mask=M[&from=S]` | 遮罩 `M` 中的通道發生變化的 sample 位置，二進位格式（解碼器使用；格式見 `src/server.c` 的 `api_transitions`） |
-| GET | `/api/decoders`、`/api/decoders/NAME.js` | `--decoders DIR` 中的使用者解碼器檔案 |
+| GET | `/api/device` | 後端類型、型號、韌體、支援的取樣率、最大取樣點數 |
+| POST | `/api/capture` | 開始擷取：`{"rate":24000000,"samples":10000000,"pre":0.1,"trigger":"XXXXXXXR","timeout_ms":0}` |
+| POST | `/api/stop` | 停止擷取；觸發後已擷取的資料會保留 |
+| GET | `/api/status` | 狀態（`idle` / `armed` / `capturing` / `processing` / `done` / `error`）與進度；`capture.changing` 為有訊號變化的通道遮罩 |
+| GET | `/api/export?fmt=vcd\|csv\|sr[&names=a,b,…][&channels=0-3,6][&changes=0]` | 下載擷取資料；`channels` 指定要包含的通道（預設為全部） |
+| POST | `/api/open?name=FILE.sr` | 請求內容為 sigrok 工作階段檔，載入後成為目前的擷取 |
+| GET | `/api/transitions?mask=M[&from=S]` | 遮罩 `M` 中的通道發生變化的取樣點索引，二進位格式；供解碼器使用（格式見 `src/server.c` 的 `api_transitions`） |
+| GET | `/api/decoders`、`/api/decoders/NAME.js` | `--decoders DIR` 中的自訂解碼器檔案 |
 
-WebSocket `/ws`。狀態改變時，伺服器會推送 `{"type":"status",…}`。用戶端送出
-`{"type":"query","id":1,"t0":0,"t1":1000000,"width":1200}`，會收到二進位回應（little-endian）：
+**WebSocket `/ws`：** 狀態改變時，伺服器會推送 `{"type":"status",…}`。波形查詢 `{"type":"query","id":1,"t0":0,"t1":1000000,"width":1200}` 會收到二進位回應（little-endian）：
 
 ```
 u32 id | u8 mode | u8 0 | u16 width | u64 t0 | u64 t1 | payload
@@ -262,57 +341,12 @@ mode 0: raw samples t0..t1 (1 byte per sample, bit c = CH c)
 mode 1: u16 per pixel, bit 2c = CH c was high, bit 2c+1 = CH c was low
 ```
 
-`{"type":"edges","id":7,"ch":5,"s":1000}` 會以文字回傳 CH5 在第 1000 個 sample 附近的邊緣：
-`{"type":"edges","id":7,"ch":5,"s":1000,"level":0,"pm":912,"p":960,"n":1008,"nn":1056}`。
-`p` 是目前電位開始的位置，`n` 是下一個邊緣，`pm`／`nn` 是再往前／往後的邊緣（沒有則為 -1）。
-搜尋時會利用摘要金字塔跳過沒有變化的區段，所以不論擷取多長都很快。
-
-## 測試
-
-- `ctest` 執行 C 單元測試：觸發、mipmap 儲存、FX2 協定編碼、JSON、搭配模擬裝置的擷取引擎、
-  VCD／CSV 匯出，以及 ZIP／deflate／`.sr` 的讀寫。
-- `tests/decoders_test.mjs` 用程式產生的波形檢查解碼器 runtime 和內建解碼器（找得到 Node.js 時由
-  `ctest` 執行）。
-- `tests/browser_check.mjs` 用 headless Chrome（`$CHROME`，或 PATH 上的 `chromium`）對模擬裝置操作
-  介面：檢查左側列表和波形對齊、解碼器在 Web Worker 中執行、沒有 JS 錯誤；給第二個參數時會把截圖
-  存到那個資料夾。
-- `tests/web_smoke.mjs` 在 Node 22+ 中用假的 DOM 執行真正的 `web/js/app.js`，連到執行中的伺服器，
-  模擬使用者操作：
-
-  ```bash
-  ./build/linux/webpulse -b sim -p 18080 &
-  node tests/web_smoke.mjs http://127.0.0.1:18080/
-  ```
-- `tools/docshots.mjs` 用 headless Chrome 產生 README 的圖片：
-
-  ```bash
-  ./build/linux/webpulse -b sim -p 18080 -d decoders &
-  node tools/docshots.mjs http://127.0.0.1:18080/ docs/images
-  ```
-
-## 目錄結構
-
-```
-src/        daemon（C11）：擷取引擎、觸發、資料儲存、裝置後端、伺服器
-web/        介面（純 ES modules，不需要建置步驟），編譯時嵌入執行檔；
-            web/decoders/ 內建協定解碼器，web/js/decode/ 是它們的 runtime
-decoders/   使用者解碼器範例，會複製到執行檔旁
-tests/      單元測試、解碼器測試、web smoke test 與瀏覽器測試
-tools/      embed_web.py（web/ -> web_assets.c）、package.py（打包 release）、
-            docshots.mjs（README 圖片）
-docs/images/  README 截圖
-cmake/      Windows 交叉編譯 toolchain
-firmware/   fx2lafw-saleae-logic.fw（GPLv2+，執行時載入）
-third_party/civetweb/   CivetWeb 1.16（MIT）
-```
+邊緣查詢 `{"type":"edges","id":7,"ch":5,"s":1000}` 會回傳 CH5 在取樣點 1000 附近的邊緣：`{"type":"edges","id":7,"ch":5,"s":1000,"level":0,"pm":912,"p":960,"n":1008,"nn":1056}`。`p` 為目前準位的起點，`n` 為下一個邊緣；`pm` 與 `nn` 分別為 `p` 之前與 `n` 之後的邊緣（不存在時為 -1）。搜尋時會利用摘要金字塔跳過沒有變化的區段，因此不論擷取長度為何都能快速完成。
 
 ## 授權
 
-WebPulse 以 MIT 授權發佈（見 `LICENSE`）。
+WebPulse 採用 MIT 授權條款（見 `LICENSE`）。
 
-- libusb 是 LGPL-2.1，以靜態連結的方式編進 release 的執行檔。原始碼在
-  https://github.com/libusb/libusb （release 使用 1.0.30）。若要使用修改過的 libusb，請依「編譯」
-  一節的方式，用它從原始碼重新編譯 WebPulse。
-- `third_party/civetweb/`：CivetWeb，MIT（`third_party/civetweb/LICENSE.md`）。
-- `firmware/`：fx2lafw 韌體是 GPLv2+，以獨立檔案的形式隨附，並附上它自己的 `COPYING`。它在執行時
-  載入，沒有編進執行檔，所以維持它自己的授權。
+- **libusb**（LGPL-2.1）：以靜態連結方式編入 Release 執行檔。原始碼位於 https://github.com/libusb/libusb，Release 使用 1.0.30 版。如需使用修改過的 libusb，請依「[從原始碼編譯](#從原始碼編譯)」的步驟重新編譯 WebPulse。
+- **CivetWeb**（MIT）：見 `third_party/civetweb/LICENSE.md`。
+- **fx2lafw 韌體**（GPLv2+）：以獨立檔案形式隨附於 `firmware/`，並附有其 `COPYING`。韌體於執行時載入，未編入執行檔，因此維持其原有授權。
