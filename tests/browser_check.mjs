@@ -4,15 +4,14 @@
 //   ./build/linux/webpulse -b sim -p 18080 &
 //   node tests/browser_check.mjs http://127.0.0.1:18080/ [screenshot-dir]
 //
-// Chrome is taken from $CHROME, else `chromium` / `google-chrome` on PATH.
+// Chrome is taken from $CHROME, else `chromium` on PATH (see chrome.mjs).
 // Unlike web_smoke.mjs this applies the real CSS and runs decoders in a Web
 // Worker. It checks that the side list lines up with the canvas rows, that a
 // decoder decodes, that there are no script errors, and saves screenshots.
 
-import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { launch, sleep } from './chrome.mjs';
 
 const base = process.argv[2] || 'http://127.0.0.1:18080/';
 const shots = process.argv[3] || null;
@@ -22,7 +21,6 @@ let failures = 0;
 function check(cond, msg) {
   if (!cond) { failures++; console.error('FAIL:', msg); } else console.log('ok  ', msg);
 }
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 try {
   await fetch(new URL('api/device', base));
@@ -31,75 +29,20 @@ try {
   process.exit(2);
 }
 
-// ---- Chrome + CDP -------------------------------------------------------------
+// ---- Chrome ------------------------------------------------------------------
 
-const profile = mkdtempSync(path.join(tmpdir(), 'webpulse-chrome-'));
-const exe = process.env.CHROME || 'chromium';
-const chrome = spawn(exe, [
-  '--headless', '--no-sandbox', '--disable-gpu', '--hide-scrollbars',
-  '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--window-size=1400,900', 'about:blank',
-], { stdio: ['ignore', 'ignore', 'pipe'] });
-const wsUrl = await new Promise((resolve, reject) => {
-  let err = '';
-  chrome.stderr.on('data', (d) => {
-    err += d;
-    const m = /DevTools listening on (ws:\/\/\S+)/.exec(err);
-    if (m) resolve(m[1]);
-  });
-  chrome.on('exit', (c) => reject(new Error(`${exe} exited (${c}): ${err.slice(-400)}`)));
-  setTimeout(() => reject(new Error('Chrome did not start')), 15000);
-});
-const http = wsUrl.replace(/^ws:\/\/([^/]+).*/, 'http://$1');
-const target = (await (await fetch(`${http}/json/list`)).json()).find((t) => t.type === 'page');
-const ws = new WebSocket(target.webSocketDebuggerUrl);
-await new Promise((r) => { ws.onopen = r; });
-let nextId = 1;
-const pending = new Map();
-const errors = [];
-ws.onmessage = (ev) => {
-  const m = JSON.parse(ev.data);
-  if (m.id && pending.has(m.id)) {
-    const { resolve, reject } = pending.get(m.id);
-    pending.delete(m.id);
-    if (m.error) reject(new Error(m.error.message));
-    else resolve(m.result);
-  } else if (m.method === 'Runtime.exceptionThrown') {
-    errors.push(m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text);
-  } else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') {
-    errors.push(m.params.args.map((a) => a.value ?? a.description).join(' '));
-  } else if (m.method === 'Log.entryAdded' && m.params.entry.level === 'error') {
-    errors.push(`${m.params.entry.text} ${m.params.entry.url || ''}`);
-  }
-};
-const send = (method, params = {}) => new Promise((resolve, reject) => {
-  const id = nextId++;
-  pending.set(id, { resolve, reject });
-  ws.send(JSON.stringify({ id, method, params }));
-});
-/** Evaluate an expression (may be async) in the page and return its value. */
-async function js(expr) {
-  const r = await send('Runtime.evaluate', { expression: `(async () => (${expr}))()`, awaitPromise: true, returnByValue: true });
-  if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
-  return r.result.value;
-}
+const browser = await launch({ width: 1400, height: 900 });
+const { send, js, mouse, errors } = browser;
 async function waitFor(expr, ms, what) {
-  const t0 = Date.now();
-  while (Date.now() - t0 < ms) {
-    try {
-      if (await js(expr)) return true;
-    } catch { /* page not there yet */ }
-    await sleep(100);
-  }
+  if (await browser.waitFor(expr, ms)) return true;
   check(false, `timeout waiting for ${what}`);
   return false;
 }
 async function shot(name) {
   if (!shots) return;
   mkdirSync(shots, { recursive: true });
-  const r = await send('Page.captureScreenshot', { format: 'png' });
-  writeFileSync(path.join(shots, name), Buffer.from(r.data, 'base64'));
+  writeFileSync(path.join(shots, name), await browser.screenshot());
 }
-const mouse = (x, y) => send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
 
 // The side list (channel rows, then decoder labels) must line up with the
 // canvas rows, which start below the ruler.
@@ -122,10 +65,6 @@ function checkAlign(a, what) {
 }
 
 try {
-  await send('Runtime.enable');
-  await send('Log.enable');
-  await send('Page.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false });
   await send('Page.navigate', { url: base });
   await waitFor(`document.getElementById('state').dataset.state !== 'offline'`, 10000, 'WebSocket');
   await js(`localStorage.clear()`);
@@ -219,10 +158,7 @@ try {
 } catch (e) {
   check(false, `exception: ${e.stack || e}`);
 } finally {
-  ws.close();
-  chrome.kill();
-  await sleep(300);
-  rmSync(profile, { recursive: true, force: true });
+  await browser.close();
 }
 console.log(failures ? `${failures} failure(s)` : 'all browser checks passed');
 process.exit(failures ? 1 : 0);

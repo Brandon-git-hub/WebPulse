@@ -3,6 +3,8 @@
 ## Unreleased
 
 - `--browser` opens the UI in the default browser once the server is up.
+- README in Traditional Chinese (`README.zh-TW.md`), screenshots and an
+  animated demo (made by `tools/docshots.mjs` in headless Chrome).
 
 ## 0.2.0
 

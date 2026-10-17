@@ -1,5 +1,9 @@
 # WebPulse
 
+English · [繁體中文](README.zh-TW.md)
+
+![WebPulse with UART and SPI decoded, cursors on an SPI burst and the PWM line measured](docs/images/overview-dark.png)
+
 WebPulse is an 8-channel logic analyzer for Cypress FX2 boards such as the WeAct
 LogicAnalyzerV1 / CBM9002A running sigrok's fx2lafw firmware. It is meant as a
 lighter alternative to PulseView: a small C daemon does the capture and serves a
@@ -21,6 +25,19 @@ FX2 board ──USB──▶ webpulse (C: libusb + CivetWeb) ──HTTP/WebSocke
 - One executable with the UI built in. The Windows build needs no extra DLLs.
 - A simulator backend, so all of it can be developed and tested without
   hardware.
+
+## Screenshots
+
+From the whole capture to single bytes by double-clicking, then cursors that
+snap to edges and the live measurement of the line under the pointer:
+
+![Zooming in by double-click, placing cursors and measuring](docs/images/demo.png)
+
+| Light theme | Decoder settings | Channel picker |
+|---|---|---|
+| ![Light theme](docs/images/overview-light.png) | ![Decoder settings](docs/images/decoder-editor.png) | ![Channel picker](docs/images/channels.png) |
+
+The images are made from the simulator by `tools/docshots.mjs` (see Tests).
 
 ## Download
 
@@ -160,6 +177,9 @@ options; click its row label to change them. Hover an annotation to see it in
 full in the status bar. Decoders run in the browser on the transitions of the
 channels they use, so even a 256M-sample capture decodes in about a second.
 
+A new decoder picks its channels by name: a channel named "SCLK" or "SDA"
+goes to SPI's CLK or I²C's SDA.
+
 ### Writing your own
 
 A decoder is a JavaScript module in the `decoders/` folder next to the
@@ -286,7 +306,8 @@ through the summary pyramid, so it is fast on any capture length.
 ## Tests
 
 - `ctest` runs the C unit tests: trigger, mipmap store, fx2 protocol
-  encoding, JSON, the capture engine with the simulator, and VCD/CSV export.
+  encoding, JSON, the capture engine with the simulator, VCD/CSV export, and
+  ZIP / deflate / `.sr` reading and writing.
 - `tests/decoders_test.mjs` checks the decoder runtime and the built-in
   decoders on generated waveforms (run by `ctest` when Node.js is found).
 - `tests/browser_check.mjs` drives the UI in headless Chrome (`$CHROME`, or
@@ -300,6 +321,12 @@ through the summary pyramid, so it is fast on any capture length.
   ./build/linux/webpulse -b sim -p 18080 &
   node tests/web_smoke.mjs http://127.0.0.1:18080/
   ```
+- `tools/docshots.mjs` takes the README images in headless Chrome:
+
+  ```bash
+  ./build/linux/webpulse -b sim -p 18080 -d decoders &
+  node tools/docshots.mjs http://127.0.0.1:18080/ docs/images
+  ```
 
 ## Layout
 
@@ -308,8 +335,10 @@ src/        daemon (C11): capture engine, trigger, store, backends, server
 web/        UI (plain ES modules, no build step), embedded at build time;
             web/decoders/ built-in protocol decoders, web/js/decode/ their runtime
 decoders/   example user decoder, copied next to the executable
-tests/      unit tests and the web smoke test
-tools/      embed_web.py (web/ -> web_assets.c)
+tests/      unit tests, decoder tests, the web smoke test and the browser check
+tools/      embed_web.py (web/ -> web_assets.c), package.py (release archives),
+            docshots.mjs (README images)
+docs/images/  README screenshots
 cmake/      Windows cross toolchain
 firmware/   fx2lafw-saleae-logic.fw (GPLv2+, loaded at runtime)
 third_party/civetweb/   CivetWeb 1.16 (MIT)

@@ -5,7 +5,7 @@
 
 PLATFORM is e.g. win64 (-> .zip with webpulse.exe) or linux-x86_64 (-> .tar.gz).
 The archive holds one top-level folder webpulse-<version>-<platform>/ with the
-executable, firmware/, decoders/ (example user decoders), README.md and
+executable, firmware/, decoders/ (example user decoders), the READMEs and
 LICENSE. The version is read from CMakeLists.txt; the archive path is printed
 on stdout.
 """
@@ -35,7 +35,8 @@ def main():
         sys.exit(f"package.py: {exe} not found")
 
     top = f"webpulse-{version()}-{platform}"
-    files = [(exe, exe.name), (ROOT / "README.md", "README.md"), (ROOT / "LICENSE", "LICENSE")]
+    files = [(exe, exe.name), (ROOT / "LICENSE", "LICENSE")]
+    files += [(f, f.name) for f in sorted(ROOT.glob("README*.md"))]
     files += [(f, f"firmware/{f.name}") for f in sorted((ROOT / "firmware").iterdir()) if f.is_file()]
     files += [(f, f"decoders/{f.name}") for f in sorted((ROOT / "decoders").glob("*.js"))]
 
