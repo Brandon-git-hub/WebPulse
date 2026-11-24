@@ -1254,7 +1254,7 @@ function changeLanguage(code) {
   setRunButton(app.status ? BUSY.has(app.status.state) : false, !!app.ws);
   if (app.status) onStatus(app.status);
   else if (!app.ws) {
-    $('state').textContent = tr('offline');
+    $('state').textContent = 'offline';
   }
   if (app.device) showDevice(app.device);
   for (const o of document.querySelectorAll ? document.querySelectorAll('select.trig option') : []) {
@@ -1461,7 +1461,7 @@ function onStatus(st) {
   const busy = BUSY.has(st.state);
   const pill = $('state');
   pill.dataset.state = st.state;
-  pill.textContent = tr(st.state === 'armed' ? 'waiting for trigger' : st.state);
+  pill.textContent = st.state === 'armed' ? 'waiting for trigger' : st.state;   // kept in English
   setRunButton(busy);
 
   const wrap = $('progress-wrap');
@@ -1603,7 +1603,7 @@ function connect() {
     app.ws = null;
     edges.reset();
     $('state').dataset.state = 'offline';
-    $('state').textContent = tr('offline');
+    $('state').textContent = 'offline';
     $('state-detail').textContent = tr('reconnecting…');
     setRunButton(false, false);
     setTimeout(connect, app.wsRetry);

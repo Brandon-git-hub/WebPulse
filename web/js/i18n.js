@@ -5,8 +5,8 @@
 // English text. The page's fixed text is marked in index.html: data-i18n
 // (the element's text) and data-i18n-attr="title,aria-label,…".
 //
-// Decoder modules (names, options) and messages from the server stay in
-// English.
+// Decoder modules (names, options), the capture state pill (idle, done, …)
+// and messages from the server stay in English.
 
 const KEY = 'webpulse.lang';
 
@@ -74,15 +74,7 @@ const ZH_TW = {
   'Language': '語言',
   'About WebPulse': '關於 WebPulse',
 
-  // status
-  'idle': '閒置',
-  'armed': '等待觸發',
-  'waiting for trigger': '等待觸發',
-  'capturing': '擷取中',
-  'processing': '處理中',
-  'done': '完成',
-  'error': '錯誤',
-  'offline': '離線',
+  // status (the state pill itself — idle, done, … — stays in English)
   'reconnecting…': '重新連線中…',
   '{s} s · trigger {trig}': '{s} 秒 · 觸發 {trig}',
   'Capture failed': '擷取失敗',
@@ -227,9 +219,7 @@ function initialLang() {
     const saved = localStorage.getItem(KEY);
     if (LANGUAGES.some(([c]) => c === saved)) return saved;
   } catch { /* storage unavailable */ }
-  // First visit: follow the browser (any Chinese → Traditional Chinese).
-  const nav = (globalThis.navigator && navigator.language) || '';
-  return /^zh/i.test(nav) ? 'zh-TW' : 'en';
+  return 'en';                        // until chosen in Help ▸ Language
 }
 
 export function getLang() {

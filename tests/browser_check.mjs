@@ -277,7 +277,7 @@ try {
     fitTitle: document.getElementById('zoom-fit').title,
     menuClosed: document.getElementById('help-menu').hidden,
   }))()`);
-  check(zh.lang === 'zh-TW' && zh.file === '檔案' && zh.run === '執行' && zh.rate === '取樣率' && zh.state === '完成' &&
+  check(zh.lang === 'zh-TW' && zh.file === '檔案' && zh.run === '執行' && zh.rate === '取樣率' && zh.state === 'done' &&
     zh.device === '模擬器' && zh.fitTitle === '顯示完整擷取資料（F）' && zh.menuClosed, `page in Chinese (${JSON.stringify(zh)})`);
   await js(`document.getElementById('help-btn').click()`);
   await mouse(lb.x, lb.y);

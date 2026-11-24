@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - Decoders are added the way PulseView does it. The **Decoders** button opens a
   list docked on the right: search by name, description or channel; the
@@ -29,9 +29,9 @@
   dependencies with their licenses, developer, GitHub and license.
   `/api/device` reports `connected`, `build`, `os`, `civetweb` and `libusb`.
 - **Help** ▸ **Language** ▸ English / 繁體中文: the whole UI switches at once,
-  without a reload, and the choice is remembered; the first visit follows the
-  browser's language. Translations live in `web/js/i18n.js`. Decoder modules'
-  own names and options, and server messages, stay in English.
+  without a reload, and the choice is remembered; English is the default.
+  Translations live in `web/js/i18n.js`. The capture state (idle, done, …),
+  decoder modules' own names and options, and server messages stay in English.
 
 ## 0.2.3
 

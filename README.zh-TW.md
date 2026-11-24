@@ -126,7 +126,7 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="04b4", ATTR{idProduct}=="8613", MODE="0666"
 | 開始 / 停止 / 清除游標 | `R` / `S` / `Esc` |
 | 列出所有快捷鍵 | `?`，或 **Help** ▸ **Keyboard shortcuts** |
 
-工具列第二列右側、**Run** 之後也提供放大、縮小、Fit、上一個 / 下一個邊緣與 A↔B 按鈕。第一列會固定顯示裝置是否已連接，最右側為主題切換（Auto / Light / Dark）。**Help** ▸ **About WebPulse** 可查看版本、建置日期、作業系統、相依套件與授權。**Help** ▸ **Language** 可切換英文與繁體中文介面，首次開啟時依瀏覽器語言自動選擇；解碼器本身的名稱與選項維持英文。
+工具列第二列右側、**Run** 之後也提供放大、縮小、Fit、上一個 / 下一個邊緣與 A↔B 按鈕。第一列會固定顯示裝置是否已連接，最右側為主題切換（Auto / Light / Dark）。**Help** ▸ **About WebPulse** 可查看版本、建置日期、作業系統、相依套件與授權。**Help** ▸ **Language** 可切換英文與繁體中文介面，預設為英文；解碼器本身的名稱與選項維持英文。
 
 游標會自動吸附 8 px 範圍內的邊緣；放置時按住 Alt 可停用吸附。邊緣導覽以滑鼠所在、目前反白的通道為準。
 
@@ -189,7 +189,7 @@ webpulse --open capture.sr                                        # 在介面中
 WebPulse 預設只接受本機連線。使用 `--listen 0.0.0.0`（或本機某個網路介面的位址）後，其他電腦即可連線，但需要存取權杖（Access Token）。WebPulse 啟動時會產生一組隨機權杖，並顯示連線網址：
 
 ```
-WebPulse 0.2.3 listening on port 9002  (Ctrl+C to quit)
+WebPulse 0.3.0 listening on port 9002  (Ctrl+C to quit)
   on this computer:  http://localhost:9002/
   from elsewhere:    http://<this-computer>:9002/?token=930b25a523cc8bb39041ac3f524115ba
 ```

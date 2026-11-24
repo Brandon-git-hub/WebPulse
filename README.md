@@ -165,7 +165,7 @@ on the right after **Run**. Row 1 shows whether the board is connected; the
 theme switch (Auto / Light / Dark) is at its right end. **Help** ▸ **About
 WebPulse** shows the version, build date, OS, dependencies and license.
 **Help** ▸ **Language** switches the UI between English and Traditional
-Chinese (繁體中文); the first time, WebPulse follows the browser's language.
+Chinese (繁體中文); English is the default.
 Decoders' own names and options stay in English.
 
 A cursor snaps to an edge within 8 px. Hold Alt while placing it to turn
@@ -243,7 +243,7 @@ interfaces), other computers can connect, but they need an access token.
 WebPulse generates a random token at start-up and prints the address to open:
 
 ```
-WebPulse 0.2.3 listening on port 9002  (Ctrl+C to quit)
+WebPulse 0.3.0 listening on port 9002  (Ctrl+C to quit)
   on this computer:  http://localhost:9002/
   from elsewhere:    http://<this-computer>:9002/?token=930b25a523cc8bb39041ac3f524115ba
 ```

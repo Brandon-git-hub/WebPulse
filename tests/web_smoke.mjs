@@ -254,11 +254,11 @@ check($('export-vcd').href.startsWith('api/export?fmt=vcd&names=CH0%2CCH1'), `ex
 {
   const langs = $('lang-menu').children.map((b) => `${b.dataset.lang}=${b.textContent}`).join(',');
   check(langs === 'en=English,zh-TW=繁體中文', `languages listed (${langs})`);
-  check($('lang-menu').children[0]['aria-checked'] === 'true', 'English ticked by default (Node reports en-US)');
+  check($('lang-menu').children[0]['aria-checked'] === 'true', 'English by default');
   $('lang-menu').children[1].dispatch('click');
   check(store['webpulse.lang'] === 'zh-TW' && document.documentElement.lang === 'zh-TW', 'language saved');
-  check($('state').textContent === '完成' && $('device').textContent === '模擬器' && $('theme-label').textContent === '自動',
-    `status, device and theme in Chinese (${$('state').textContent}, ${$('device').textContent}, ${$('theme-label').textContent})`);
+  check($('state').textContent === 'done' && $('device').textContent === '模擬器' && $('theme-label').textContent === '自動',
+    `state pill stays English; device and theme in Chinese (${$('state').textContent}, ${$('device').textContent}, ${$('theme-label').textContent})`);
   check($('run').title === '開始擷取（R）', `Run tooltip in Chinese (${$('run').title})`);
   check($('keys-list').children[0].children[0].textContent === '擷取', 'shortcut list in Chinese');
   $('lang-menu').children[0].dispatch('click');
