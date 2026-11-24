@@ -21,8 +21,12 @@
 #include <windows.h>
 #else
 #include <fcntl.h>
+#include <limits.h>
 #include <spawn.h>
 #include <unistd.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 extern char **environ;
 #endif
 
@@ -224,6 +228,18 @@ static void exe_dir(char *buf, size_t len)
     }
     while (n > 0 && buf[n - 1] != '\\' && buf[n - 1] != '/')
         n--;
+#elif defined(__APPLE__)
+    /* The path it was started by (may be relative or a symlink): resolved. */
+    char raw[PATH_MAX], real[PATH_MAX];
+    uint32_t rawlen = sizeof(raw);
+    if (_NSGetExecutablePath(raw, &rawlen) != 0 || !realpath(raw, real) ||
+        (n = strlen(real)) >= len) {
+        buf[0] = '\0';
+        return;
+    }
+    memcpy(buf, real, n + 1);
+    while (n > 0 && buf[n - 1] != '/')
+        n--;
 #else
     ssize_t r = readlink("/proc/self/exe", buf, len - 1);
     if (r <= 0) {
@@ -405,12 +421,16 @@ static int run_capture(wp_engine *e, const options *o)
 }
 
 /* Whether there is a desktop to open a browser on: always on Windows; on
- * Linux only with an X11 or Wayland session (not on a server or in a
- * container, where trying would only print a warning). */
+ * macOS unless logged in over SSH; on Linux only with an X11 or Wayland
+ * session (not on a server or in a container, where trying would only print
+ * a warning). */
 static int have_desktop(void)
 {
 #ifdef _WIN32
     return 1;
+#elif defined(__APPLE__)
+    const char *ssh = getenv("SSH_CONNECTION");
+    return !(ssh && *ssh);
 #else
     const char *x = getenv("DISPLAY"), *w = getenv("WAYLAND_DISPLAY");
     return (x && *x) || (w && *w);
@@ -550,15 +570,21 @@ static void open_browser(const char *url)
         }
     }
 #else
-    /* xdg-open, without a shell, its output discarded; not waited for. */
-    char *argv[] = { "xdg-open", (char *)url, NULL };
+    /* xdg-open (macOS: open), without a shell, its output discarded; not
+     * waited for. */
+#ifdef __APPLE__
+#define OPENER "open"
+#else
+#define OPENER "xdg-open"
+#endif
+    char *argv[] = { OPENER, (char *)url, NULL };
     posix_spawn_file_actions_t fa;
     pid_t pid;
     posix_spawn_file_actions_init(&fa);
     posix_spawn_file_actions_addopen(&fa, 1, "/dev/null", O_WRONLY, 0);
     posix_spawn_file_actions_addopen(&fa, 2, "/dev/null", O_WRONLY, 0);
-    if (posix_spawnp(&pid, "xdg-open", &fa, NULL, argv, environ) != 0)
-        fprintf(stderr, "webpulse: could not run xdg-open; open %s yourself\n", url);
+    if (posix_spawnp(&pid, OPENER, &fa, NULL, argv, environ) != 0)
+        fprintf(stderr, "webpulse: could not run " OPENER "; open %s yourself\n", url);
     posix_spawn_file_actions_destroy(&fa);
     signal(SIGCHLD, SIG_IGN);           /* no zombie once it exits */
 #endif

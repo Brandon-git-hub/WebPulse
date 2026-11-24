@@ -74,6 +74,7 @@ WebPulse 隨附 fx2lafw 韌體，每次開啟裝置時會將韌體載入裝置�
 |---|---|
 | `webpulse-<版本>-win64.zip` | Windows 10 / 11 x64，不需要安裝 DLL |
 | `webpulse-<版本>-linux-x86_64.tar.gz` | Linux x86_64，需要 glibc 2.35 以上；已靜態連結 libusb |
+| `webpulse-<版本>-macos-universal.tar.gz` | macOS 11 以上，支援 Apple silicon 與 Intel；已靜態連結 libusb |
 
 解壓縮後，請將 `firmware/` 資料夾與執行檔放在同一個目錄。
 
@@ -100,11 +101,19 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="04b4", ATTR{idProduct}=="8613", MODE="0666"
 > `-v /dev/bus/usb:/dev/bus/usb --device-cgroup-rule='c 189:* rmw'`。
 > udev 規則請設定在主機端，容器內不需要 udev。
 
+**macOS**
+
+不需要安裝驅動程式。`webpulse` 沒有程式碼簽章，從瀏覽器下載的檔案會被 macOS 封鎖。請在解壓縮後的資料夾中執行一次以下指令，移除隔離標記：
+
+```bash
+xattr -dr com.apple.quarantine .
+```
+
 ### 3. 啟動
 
 在 Windows 上雙擊 `webpulse.exe`，會直接在預設瀏覽器開啟介面，不會出現主控台視窗；關閉最後一個顯示 WebPulse 的瀏覽器分頁後，數秒內程式即自動結束。程式執行中再次雙擊，只會重新開啟介面。紀錄檔位於 `%TEMP%\webpulse.log`，導致程式結束的錯誤會以對話框顯示。
 
-從終端機執行（cmd、PowerShell，或在 Linux 上執行 `./webpulse`）時，程式會顯示網址（通常為 http://localhost:9002/）與執行紀錄，並同樣開啟瀏覽器；按 Ctrl+C 或關閉終端機即可結束。如需使用下方的選項（例如讓其他電腦連線），請從終端機執行。
+從終端機執行（cmd、PowerShell，或在 Linux 與 macOS 上執行 `./webpulse`）時，程式會顯示網址（通常為 http://localhost:9002/）與執行紀錄，並同樣開啟瀏覽器；按 Ctrl+C 或關閉終端機即可結束。如需使用下方的選項（例如讓其他電腦連線），請從終端機執行。
 
 在工具列選擇取樣率與取樣點數，再點選 **Run** 開始擷取。第一次開啟裝置時，載入韌體約需 1 至 2 秒。
 
@@ -287,6 +296,8 @@ export PKG_CONFIG_PATH=$HOME/libusb-linux/lib/pkgconfig
 ```
 
 若 `PKG_CONFIG_PATH` 同時包含 MinGW sysroot，請將 Linux 的目錄放在前面。兩者都有 `libusb-1.0.pc`，pkg-config 會使用第一個找到的檔案。
+
+**macOS：** 與 Linux 相同，需要 Xcode 命令列工具，並以 Homebrew 安裝 libusb（`brew install cmake ninja pkgconf libusb`）。若要產生不需 Homebrew 即可執行的程式，請依照 Linux 的方式靜態編譯 libusb（不加 `--disable-udev`），並將 `PKG_CONFIG_PATH` 指向該目錄；加上 `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"` 可產生 universal binary（此時 libusb 需要 `CFLAGS="-O2 -arch arm64 -arch x86_64"` 與 `--disable-dependency-tracking`）。
 
 **Windows：** 在 Linux 上使用 llvm-mingw 交叉編譯。工具鏈檔案會在 `$TOOLS_ROOT`（預設為 `/mnt/ssd/tools`）下尋找編譯工具。
 

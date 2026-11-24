@@ -87,6 +87,7 @@ Get the package for your system from the
 |---|---|
 | `webpulse-<version>-win64.zip` | Windows 10 / 11 x64; no DLLs to install |
 | `webpulse-<version>-linux-x86_64.tar.gz` | Linux x86_64, glibc 2.35 or newer; libusb statically linked |
+| `webpulse-<version>-macos-universal.tar.gz` | macOS 11 or newer, Apple silicon and Intel; libusb statically linked |
 
 After unpacking, keep the `firmware/` folder next to the executable.
 
@@ -124,6 +125,16 @@ board.
 > `-v /dev/bus/usb:/dev/bus/usb --device-cgroup-rule='c 189:* rmw'`.
 > Put the udev rule on the host. The container does not need udev.
 
+**macOS**
+
+No driver is needed. `webpulse` is not code-signed, so macOS blocks a copy
+downloaded with a browser. Clear the quarantine flag once, in the unpacked
+folder:
+
+```bash
+xattr -dr com.apple.quarantine .
+```
+
 ### 3. Start
 
 On Windows, double-click `webpulse.exe`: the UI opens in your default browser,
@@ -132,7 +143,7 @@ last browser tab that shows it. Double-clicking it again while it runs only
 opens the UI again. Its log is in `%TEMP%\webpulse.log`, and an error that
 stops it is shown in a message box.
 
-From a terminal (cmd, PowerShell, or `./webpulse` on Linux) WebPulse prints its
+From a terminal (cmd, PowerShell, or `./webpulse` on Linux and macOS) WebPulse prints its
 address, normally http://localhost:9002/, and its log, and also opens the
 browser. Ctrl+C, or closing the terminal, stops it. Use a terminal for the
 options below, such as access from other computers.
@@ -368,6 +379,14 @@ export PKG_CONFIG_PATH=$HOME/libusb-linux/lib/pkgconfig
 
 If `PKG_CONFIG_PATH` also lists a MinGW sysroot, put the Linux directory first.
 Both contain a `libusb-1.0.pc`, and pkg-config uses the first one it finds.
+
+**macOS:** the same as on Linux, with the Xcode command line tools and
+libusb from Homebrew (`brew install cmake ninja pkgconf libusb`). For a
+binary that runs without Homebrew, build libusb statically as for Linux
+(without `--disable-udev`) and point `PKG_CONFIG_PATH` at it; add
+`-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"` for a universal binary (libusb
+then needs `CFLAGS="-O2 -arch arm64 -arch x86_64"` and
+`--disable-dependency-tracking`).
 
 **Windows:** cross-compile from Linux with llvm-mingw. The toolchain file looks
 for the tools under `$TOOLS_ROOT`, by default `/mnt/ssd/tools`.

@@ -91,6 +91,8 @@ static libusb_device_handle *open_first(fx2_priv *p, struct libusb_device_descri
             snprintf(err, errlen, "cannot open FX2 device: %s%s", libusb_error_name(last_rc),
 #ifdef _WIN32
                      " (install the WinUSB driver with Zadig)"
+#elif defined(__APPLE__)
+                     " (is another program, e.g. PulseView, using it?)"
 #else
                      " (check udev permissions)"
 #endif
@@ -377,6 +379,8 @@ static void *event_thread(void *arg)
     /* The FX2 FIFO holds well under 1 ms of data at high rates, so the
      * resubmission path must not be pre-empted by e.g. the browser. */
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+#elif defined(__APPLE__)
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
 #endif
     while (atomic_load(&p->active) > 0) {
         struct timeval tv = { 0, 100000 };

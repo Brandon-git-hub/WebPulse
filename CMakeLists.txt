@@ -51,6 +51,11 @@ if(WP_HAVE_FX2)
     target_sources(wpcore PRIVATE src/dev_fx2.c)
     target_compile_definitions(wpcore PUBLIC WP_HAVE_FX2=1)
     target_link_libraries(wpcore PUBLIC PkgConfig::LIBUSB)
+    if(APPLE)
+        # A static libusb also needs what its Libs.private lists: libobjc and
+        # the IOKit, CoreFoundation and Security frameworks.
+        target_link_libraries(wpcore PUBLIC ${LIBUSB_STATIC_LDFLAGS})
+    endif()
 endif()
 
 # --- CivetWeb ---------------------------------------------------------------

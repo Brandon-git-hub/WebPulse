@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- macOS support: a universal binary (Apple silicon and Intel, macOS 11 or
+  newer) with libusb statically linked, built and tested in CI. No driver is
+  needed; the browser opens with `open`.
+
 ## 0.3.0
 
 - Decoders are added the way PulseView does it. The **Decoders** button opens a
