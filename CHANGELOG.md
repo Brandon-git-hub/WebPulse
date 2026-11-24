@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Windows: double-clicking `webpulse.exe` no longer leaves a console window.
+  The UI opens in the browser, and WebPulse exits once the last browser tab
+  using it has been closed. A second double-click opens the running instance
+  instead of starting another one. The log goes to `%TEMP%\webpulse.log`, and
+  a fatal error is shown in a message box. Started from cmd or PowerShell,
+  WebPulse behaves as before.
+- `webpulse.exe` has an icon: the square-wave logo from the UI, made from the
+  favicon at build time (`tools/make_icon.py`).
+
 ## 0.2.2
 
 - The UI opens in the default browser by default (Windows, and Linux desktop

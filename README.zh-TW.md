@@ -102,7 +102,9 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="04b4", ATTR{idProduct}=="8613", MODE="0666"
 
 ### 3. 啟動
 
-在 Windows 上雙擊 `webpulse.exe`，或在 Linux 上執行 `./webpulse`。瀏覽器會自動開啟程式所顯示的網址，通常為 http://localhost:9002/。關閉主控台視窗或按 Ctrl+C 即可結束 WebPulse。
+在 Windows 上雙擊 `webpulse.exe`，會直接在預設瀏覽器開啟介面，不會出現主控台視窗；關閉最後一個顯示 WebPulse 的瀏覽器分頁後，數秒內程式即自動結束。程式執行中再次雙擊，只會重新開啟介面。紀錄檔位於 `%TEMP%\webpulse.log`，導致程式結束的錯誤會以對話框顯示。
+
+從終端機執行（cmd、PowerShell，或在 Linux 上執行 `./webpulse`）時，程式會顯示網址（通常為 http://localhost:9002/）與執行紀錄，並同樣開啟瀏覽器；按 Ctrl+C 或關閉終端機即可結束。如需使用下方的選項（例如讓其他電腦連線），請從終端機執行。
 
 在工具列選擇取樣率與取樣點數，再點選 **Run** 開始擷取。第一次開啟裝置時，載入韌體約需 1 至 2 秒。
 
@@ -318,7 +320,7 @@ web/          網頁介面（純 ES modules，不需建置），編譯時嵌入�
   js/decode/  解碼器執行環境
 decoders/     自訂解碼器範例，編譯時複製到執行檔旁
 tests/        單元測試、解碼器測試、smoke test、瀏覽器測試
-tools/        embed_web.py、package.py（打包 Release）、docshots.mjs（README 截圖）
+tools/        embed_web.py、make_icon.py（由 favicon 產生 Windows 圖示）、package.py（打包 Release）、docshots.mjs（README 截圖）
 cmake/        Windows 交叉編譯工具鏈
 firmware/     fx2lafw-saleae-logic.fw（GPLv2+，執行時載入）
 third_party/  CivetWeb 1.16（MIT）

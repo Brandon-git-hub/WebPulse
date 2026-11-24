@@ -417,12 +417,138 @@ static int have_desktop(void)
 #endif
 }
 
+/*
+ * Desktop mode (Windows): started by double-clicking webpulse.exe rather than
+ * from a terminal. Windows then gives the program a console window of its
+ * own; it is closed at once, the UI opens in the browser, and WebPulse exits
+ * when the last browser page using it has been closed. Output goes to
+ * %TEMP%\webpulse.log, and a failure is shown in a message box.
+ */
+#ifdef _WIN32
+static int g_desktop;
+
+#define DESKTOP_GRACE_MS   10000    /* last page closed: wait this long for a reload */
+#define DESKTOP_FIRST_MS  120000    /* no page ever connected: give up after this */
+#define INSTANCE_NAME     "Local\\WebPulse.url"
+#define INSTANCE_LEN      128
+
+static char g_log_path[MAX_PATH + 16];
+static HANDLE g_instance;
+
+/* The console is ours alone (no cmd / PowerShell attached): a double-click. */
+static int started_from_explorer(void)
+{
+    DWORD pids[2];
+    return GetConsoleProcessList(pids, 2) == 1;
+}
+
+static void desktop_begin(void)
+{
+    char dir[MAX_PATH];
+    DWORD n = GetTempPathA(sizeof(dir), dir);
+
+    FreeConsole();
+    g_desktop = 1;
+    (void)!freopen("NUL", "w", stdout);     /* help text etc. has nowhere to go */
+    if (n && n < sizeof(dir)) {
+        snprintf(g_log_path, sizeof(g_log_path), "%swebpulse.log", dir);
+        if (freopen(g_log_path, "w", stderr))
+            setvbuf(stderr, NULL, _IONBF, 0);
+        else
+            g_log_path[0] = '\0';
+    }
+}
+
+static void desktop_message(const char *text, UINT icon)
+{
+    MessageBoxA(NULL, text, "WebPulse", MB_OK | MB_SETFOREGROUND | icon);
+}
+
+/* On failure, show the end of the log (the error is its last line). */
+static int desktop_end(int rc)
+{
+    char msg[1600] = "WebPulse stopped with an error.";
+    FILE *f;
+
+    if (!g_desktop || rc == 0)
+        return rc;
+    fflush(stderr);
+    if (g_log_path[0] && (f = fopen(g_log_path, "rb")) != NULL) {
+        long size, from;
+        size_t got;
+        fseek(f, 0, SEEK_END);
+        size = ftell(f);
+        from = size > 1200 ? size - 1200 : 0;
+        fseek(f, from, SEEK_SET);
+        got = fread(msg, 1, 1200, f);
+        fclose(f);
+        msg[got] = '\0';
+        snprintf(msg + got, sizeof(msg) - got, "\nLog: %s", g_log_path);
+    }
+    desktop_message(msg, MB_ICONERROR);
+    return rc;
+}
+
+/* Tell later double-clicks where this instance's UI is. The name exists only
+ * while the process that created it runs. */
+static void publish_instance(const char *url)
+{
+    char *p;
+    g_instance = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0,
+                                    INSTANCE_LEN, INSTANCE_NAME);
+    if (!g_instance)
+        return;
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {   /* another WebPulse got there first */
+        CloseHandle(g_instance);
+        g_instance = NULL;
+        return;
+    }
+    p = MapViewOfFile(g_instance, FILE_MAP_WRITE, 0, 0, INSTANCE_LEN);
+    if (p) {
+        wp_strlcpy(p, url, INSTANCE_LEN);
+        UnmapViewOfFile(p);
+    }
+}
+
+/* The UI address of a WebPulse already running on this computer, if any. */
+static int running_instance(char *url, size_t len)
+{
+    HANDLE h = OpenFileMappingA(FILE_MAP_READ, FALSE, INSTANCE_NAME);
+    const char *p;
+    url[0] = '\0';
+    if (!h)
+        return 0;
+    p = MapViewOfFile(h, FILE_MAP_READ, 0, 0, INSTANCE_LEN);
+    if (p) {
+        size_t n = strnlen(p, INSTANCE_LEN - 1);
+        if (n < len) {
+            memcpy(url, p, n);
+            url[n] = '\0';
+        }
+        UnmapViewOfFile(p);
+    }
+    CloseHandle(h);
+    return strncmp(url, "http://", 7) == 0;
+}
+#else
+static int desktop_end(int rc)
+{
+    return rc;
+}
+#endif
+
 /* Open url in the default browser; failures only print a note. */
 static void open_browser(const char *url)
 {
 #ifdef _WIN32
-    if ((INT_PTR)ShellExecuteA(NULL, "open", url, NULL, NULL, SW_SHOWNORMAL) <= 32)
+    if ((INT_PTR)ShellExecuteA(NULL, "open", url, NULL, NULL, SW_SHOWNORMAL) <= 32) {
         fprintf(stderr, "webpulse: could not open a browser; open %s yourself\n", url);
+        if (g_desktop) {
+            char msg[200];
+            snprintf(msg, sizeof(msg), "Could not open a web browser.\n\nOpen %s yourself.", url);
+            desktop_message(msg, MB_ICONWARNING);
+        }
+    }
 #else
     /* xdg-open, without a shell, its output discarded; not waited for. */
     char *argv[] = { "xdg-open", (char *)url, NULL };
@@ -504,16 +630,40 @@ static int run_server(wp_engine *e, const options *o)
             fprintf(stderr, "  from elsewhere:    http://%s:%d/  (no access token: --no-auth)\n",
                     host, wp_server_port(srv));
     }
-    if (!o->no_browser && have_desktop()) {
+    {
         /* This computer never needs the token, so the local address will do. */
         char url[96];
         snprintf(url, sizeof(url), "http://%s:%d/",
                  is_local_addr(o->listen) && strcmp(o->listen, "localhost") != 0 ? o->listen : "localhost",
                  wp_server_port(srv));
-        open_browser(url);
+#ifdef _WIN32
+        publish_instance(url);
+#endif
+        if (!o->no_browser && have_desktop())
+            open_browser(url);
     }
-    while (!g_quit)
-        wp_sleep_ms(100);
+    {
+        uint64_t start = wp_now_ms(), last_page = 0;
+        while (!g_quit) {
+            wp_sleep_ms(100);
+#ifdef _WIN32
+            if (g_desktop) {
+                uint64_t now = wp_now_ms();
+                if (wp_server_clients(srv) > 0) {
+                    last_page = now;
+                } else if (last_page ? now - last_page > DESKTOP_GRACE_MS
+                                     : now - start > DESKTOP_FIRST_MS) {
+                    fprintf(stderr, last_page ? "browser page closed\n"
+                                              : "no browser page connected\n");
+                    break;
+                }
+            }
+#else
+            (void)start;
+            (void)last_page;
+#endif
+        }
+    }
     fprintf(stderr, "shutting down\n");
     wp_engine_stop(e);
     wp_engine_wait(e, 5000);
@@ -576,12 +726,31 @@ int main(int argc, char **argv)
     if (o.open && o.output)
         return run_convert(&o);
 
+#ifdef _WIN32
+    /* Double-clicked: no console, and only one WebPulse (the FX2 board can be
+     * used by one program at a time). --no-browser keeps the console, as
+     * there would be no other way to see or stop the program. */
+    if (!o.capture && !o.no_browser && started_from_explorer()) {
+        char url[INSTANCE_LEN];
+        if (running_instance(url, sizeof(url))) {
+            FreeConsole();
+            if ((INT_PTR)ShellExecuteA(NULL, "open", url, NULL, NULL, SW_SHOWNORMAL) <= 32) {
+                char msg[200];
+                snprintf(msg, sizeof(msg), "WebPulse is already running at %s", url);
+                desktop_message(msg, MB_ICONINFORMATION);
+            }
+            return 0;
+        }
+        desktop_begin();
+    }
+#endif
+
     signal(SIGINT, on_signal);
     signal(SIGTERM, on_signal);
 
     dev = make_device(&o, fw_path, sizeof(fw_path));
     if (!dev)
-        return 1;
+        return desktop_end(1);
     if (dev->ops->open(dev, err, sizeof(err)) < 0) {
         if (o.capture) {
             fprintf(stderr, "webpulse: %s\n", err);
@@ -602,7 +771,7 @@ int main(int argc, char **argv)
     if (!e) {
         fprintf(stderr, "webpulse: out of memory\n");
         wp_device_destroy(dev);
-        return 1;
+        return desktop_end(1);
     }
 
     if (o.capture) {
@@ -615,7 +784,7 @@ int main(int argc, char **argv)
             if (load_sr(o.open, o.max_samples, &c) < 0) {
                 wp_engine_free(e);
                 wp_device_destroy(dev);
-                return 1;
+                return desktop_end(1);
             }
             snprintf(note, sizeof(note), "opened %s", o.open);
             if (wp_engine_load(e, c.raw, c.n, c.rate, c.trigger_pos,
@@ -628,5 +797,5 @@ int main(int argc, char **argv)
     wp_engine_free(e);
     dev->ops->close(dev);
     wp_device_destroy(dev);
-    return rc;
+    return desktop_end(rc);
 }

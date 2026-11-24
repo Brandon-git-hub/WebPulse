@@ -85,7 +85,23 @@ target_compile_options(webpulse PRIVATE ${WP_WARNINGS})
 target_compile_definitions(webpulse PRIVATE WP_VERSION="${PROJECT_VERSION}")
 target_link_libraries(webpulse PRIVATE wpcore civetweb)
 if(WIN32)
-    target_link_libraries(webpulse PRIVATE shell32)     # ShellExecute for --browser
+    target_link_libraries(webpulse PRIVATE shell32 user32)  # ShellExecute; MessageBox when double-clicked
+
+    # Explorer / taskbar icon: the UI's favicon (web/index.html), drawn by
+    # tools/make_icon.py so the two always match.
+    enable_language(RC)
+    set(WP_ICON ${CMAKE_BINARY_DIR}/webpulse.ico)
+    set(WP_RC ${CMAKE_BINARY_DIR}/webpulse.rc)
+    add_custom_command(
+        OUTPUT ${WP_ICON}
+        COMMAND Python3::Interpreter ${CMAKE_SOURCE_DIR}/tools/make_icon.py
+                ${CMAKE_SOURCE_DIR}/web/index.html ${WP_ICON}
+        DEPENDS ${CMAKE_SOURCE_DIR}/web/index.html ${CMAKE_SOURCE_DIR}/tools/make_icon.py
+        COMMENT "Making webpulse.ico from the UI's favicon"
+        VERBATIM)
+    file(WRITE ${WP_RC} "1 ICON \"webpulse.ico\"\n")
+    set_source_files_properties(${WP_RC} PROPERTIES OBJECT_DEPENDS ${WP_ICON})
+    target_sources(webpulse PRIVATE ${WP_RC})
 endif()
 
 # Ship the firmware next to the executable.

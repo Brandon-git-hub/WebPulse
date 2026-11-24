@@ -146,7 +146,7 @@ jobs:
           deps=$("$TOOLS_ROOT/mingw-w64/current/bin/llvm-objdump" -p build/win/webpulse.exe \
                  | awk '/DLL Name/ {print $3}' | sort)
           echo "$deps"
-          if echo "$deps" | grep -viE '^(KERNEL32|WS2_32|SHELL32|api-ms-win-crt-.*)\.dll$'; then
+          if echo "$deps" | grep -viE '^(KERNEL32|USER32|WS2_32|SHELL32|api-ms-win-crt-.*)\.dll$'; then
             echo "unexpected DLL dependency" >&2
             exit 1
           fi

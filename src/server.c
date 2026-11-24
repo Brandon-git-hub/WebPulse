@@ -1002,6 +1002,15 @@ int wp_server_port(const wp_server *s)
     return s->port;
 }
 
+int wp_server_clients(wp_server *s)
+{
+    int n;
+    pthread_mutex_lock(&s->ws_lock);
+    n = s->nws;
+    pthread_mutex_unlock(&s->ws_lock);
+    return n;
+}
+
 void wp_server_stop(wp_server *s)
 {
     if (!s)

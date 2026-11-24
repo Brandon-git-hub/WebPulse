@@ -126,9 +126,16 @@ board.
 
 ### 3. Start
 
-Double-click `webpulse.exe`, or run `./webpulse` on Linux. The UI opens in
-your browser at the address WebPulse prints, normally http://localhost:9002/.
-Closing the console window, or pressing Ctrl+C, stops WebPulse.
+On Windows, double-click `webpulse.exe`: the UI opens in your default browser,
+with no console window, and WebPulse exits a few seconds after you close the
+last browser tab that shows it. Double-clicking it again while it runs only
+opens the UI again. Its log is in `%TEMP%\webpulse.log`, and an error that
+stops it is shown in a message box.
+
+From a terminal (cmd, PowerShell, or `./webpulse` on Linux) WebPulse prints its
+address, normally http://localhost:9002/, and its log, and also opens the
+browser. Ctrl+C, or closing the terminal, stops it. Use a terminal for the
+options below, such as access from other computers.
 
 Choose the sample rate and the number of samples in the toolbar, then click
 **Run**. The first time WebPulse opens the board, uploading the firmware takes
@@ -385,7 +392,7 @@ web/          UI (plain ES modules, no build step), embedded into the executable
   js/decode/  decoder runtime
 decoders/     example user decoder, copied next to the executable
 tests/        unit tests, decoder tests, smoke test, browser check
-tools/        embed_web.py, package.py (release archives), docshots.mjs (README images)
+tools/        embed_web.py, make_icon.py (Windows icon from the favicon), package.py (release archives), docshots.mjs (README images)
 cmake/        Windows cross-compile toolchain
 firmware/     fx2lafw-saleae-logic.fw (GPLv2+, loaded at run time)
 third_party/  CivetWeb 1.16 (MIT)
