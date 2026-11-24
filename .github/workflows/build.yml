@@ -172,7 +172,7 @@ jobs:
           path: dist/*
 
   macos:
-    runs-on: macos-14         # Apple Silicon; the build is universal (arm64 + x86_64)
+    runs-on: macos-15         # Apple silicon; the build is universal (arm64 + x86_64)
     env:
       MACOSX_DEPLOYMENT_TARGET: '11.0'
     steps:
