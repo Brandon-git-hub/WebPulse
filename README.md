@@ -254,7 +254,10 @@ works under that path prefix.
 
 ## Protocol decoders
 
-The **Decoders** button adds a decoder below the channels:
+The **Decoders** button opens the list of decoders on the right. Type to
+search (by name, description or channel), then double-click a decoder, or press
+Enter, to add it below the channels. The list stays open, so you can add
+several.
 
 | Decoder | Decodes |
 |---|---|
@@ -267,7 +270,9 @@ The **Decoders** button adds a decoder below the channels:
 - When a decoder is added, its inputs are assigned by channel name. For
   example, a channel named `SCLK` goes to SPI's CLK and one named `SDA` goes to
   I²C's SDA.
-- Click a decoder's row label to change its channel assignment and options.
+- Click a decoder's row label for its settings: name, colour, channels and
+  options. Each change applies at once and the decoder runs again. **Remove
+  decoder** is at the bottom.
 - Hover an annotation to see its full text in the status bar.
 - Decoders run in the browser on the transitions of the channels they use, so
   even a 256M-sample capture decodes in about a second.
@@ -276,7 +281,7 @@ The **Decoders** button adds a decoder below the channels:
 
 A decoder is a JavaScript module in the `decoders/` folder next to the
 executable (or in the folder given with `--decoders DIR`). After adding or
-editing one, click **Reload** in the Decoders panel; there is no need to
+editing one, click **Reload** below the decoder list; there is no need to
 restart WebPulse. `decoders/pwm.js` is a short example, and the built-in
 decoders in `web/decoders/` are complete ones.
 

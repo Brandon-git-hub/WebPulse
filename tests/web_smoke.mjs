@@ -68,7 +68,7 @@ class FakeElement {
   addEventListener(type, fn) { (this.handlers[type] ||= []).push(fn); }
   removeEventListener(type, fn) { this.handlers[type] = (this.handlers[type] || []).filter((f) => f !== fn); }
   dispatch(type, ev = {}) {
-    const e = { preventDefault() {}, target: this, button: 0, pointerId: 1, ...ev };
+    const e = { type, preventDefault() {}, stopPropagation() {}, target: this, button: 0, pointerId: 1, ...ev };
     for (const fn of this.handlers[type] || []) fn(e);
   }
   querySelector(sel) { return (this._q[sel] ||= new FakeElement(sel === '.trig' ? 'select' : 'input')); }
@@ -111,8 +111,8 @@ const document = {
 // Input defaults from index.html
 document.getElementById('samples').value = '2M';
 document.getElementById('channels-pop').hidden = true;
-document.getElementById('decoders-pop').hidden = true;
-document.getElementById('dec-editor').hidden = true;
+document.getElementById('dec-dock').hidden = true;
+document.getElementById('dec-pop').hidden = true;
 document.getElementById('pre').value = '25';
 document.getElementById('timeout').value = '5';
 document.getElementById('empty').querySelector = () => new FakeElement('p');
@@ -392,21 +392,30 @@ check(saved.samples === '500k' && saved.channels && saved.channels.length === 8,
 check($('run').dataset.mode === 'run' && !$('run').disabled, 'Run button back to Run after the capture');
 
 // Protocol decoders: add UART (RX defaults to CH0, the simulator's UART line)
+// from the decoder list docked on the right, by searching and pressing Enter.
 {
-  await waitFor(() => $('dec-add-sel').children.length > 0, 5000, 'decoder menu');
-  const builtin = $('dec-add-sel').children[0].children.map((o) => o.value).join(',');
-  check(builtin === 'builtin:uart,builtin:spi,builtin:i2c,builtin:parallel,builtin:counter', `built-in decoders (${builtin})`);
-  // The example next to the executable is listed (Node cannot import it over
-  // HTTP, so here it shows up as unavailable).
-  const user = ($('dec-add-sel').children[1] || { children: [] }).children.map((o) => o.value).join(',');
-  check(user === 'user:pwm.js', `user decoders listed (${user})`);
-  $('dec-add-sel').value = 'builtin:uart';
-  $('dec-add').dispatch('click');
+  const entries = () => $('dec-catalog').children.filter((e) => e.dataset.key);
+  await waitFor(() => entries().length > 0, 5000, 'decoder list');
+  const keys = entries().map((e) => e.dataset.key).join(',');
+  // The example next to the executable is listed too (Node cannot import it
+  // over HTTP, so here it shows up as unavailable).
+  check(keys === 'builtin:uart,builtin:spi,builtin:i2c,builtin:parallel,builtin:counter,user:pwm.js',
+    `decoders listed (${keys})`);
+  $('decoders-btn').dispatch('click');
+  check(!$('dec-dock').hidden && $('decoders-btn')['aria-pressed'] === 'true', 'decoder list opens');
+  $('dec-search').value = 'serial';
+  $('dec-search').dispatch('input');
+  const found = entries().map((e) => e.dataset.key).join(',');
+  check(found === 'builtin:uart,builtin:spi', `search by description (${found})`);
+  $('dec-search').value = 'uart';
+  $('dec-search').dispatch('input');
+  $('dec-search').dispatch('keydown', { key: 'Enter' });
   await waitFor(() => $('dec-labels').children.length === 2 && !/decoding/.test($('dec-labels').children[0].title),
     10000, 'UART decode');
   check($('dec-labels').children.map((e) => e.querySelector('.txt').textContent).join('|') === 'UART · Data|UART · Errors',
     'decoder rows listed');
   check($('decoders-count').textContent === '1', 'decoder count on the button');
+  check(!$('dec-dock').hidden, 'decoder list stays open after adding');
   // Hover the data row (below 8 channel rows) where the line sends its message
   // (x = 560 is sample ~233k, inside a burst): a hex byte + ASCII.
   $('wave').dispatch('pointermove', { clientX: 560, clientY: 30 + 8 * 44 + 13 });
@@ -416,18 +425,25 @@ check($('run').dataset.mode === 'run' && !$('run').disabled, 'Run button back to
   const saved = JSON.parse(store['webpulse.settings.v1']).decoders;
   check(saved.length === 1 && saved[0].key === 'builtin:uart' && saved[0].assign.rx === 0, 'decoder saved');
 
-  // Edit: 9600 baud no longer matches the 115200 baud line, so no "Hello".
+  // Settings popup from the row label; a change applies at once:
+  // 9600 baud no longer matches the 115200 baud line.
   $('dec-labels').children[0].dispatch('click');
-  const form = $('dec-editor');
-  check(!form.hidden && !$('decoders-pop').hidden, 'editor opens from the row label');
-  form.querySelector('[data-opt="baud"]').value = '9600';
-  form.onsubmit({ preventDefault() {} });
+  const pop = $('dec-pop');
+  check(!pop.hidden, 'settings open from the row label');
+  const baud = pop.children.find((e) => e.dataset.opt === 'baud');
+  baud.value = '9600';
+  baud.dispatch('change');
   await waitFor(() => !/decoding/.test($('dec-labels').children[0].title), 10000, 're-decode');
   check(JSON.parse(store['webpulse.settings.v1']).decoders[0].options.baud === 9600, 'option saved as a number');
-  form.querySelector('.btns .del').dispatch('click');
-  check($('dec-labels').children.length === 0 && $('decoders-count').textContent === '', 'decoder removed');
+  const name = pop.children.find((e) => e.id === 'dec-f-label');
+  name.value = 'Console';
+  name.dispatch('change');
+  check($('dec-labels').children[0].querySelector('.txt').textContent === 'Console · Data', 'renamed');
+  pop.children.find((e) => e.className === 'btns').children.find((e) => e.className === 'del').dispatch('click');
+  check($('dec-labels').children.length === 0 && $('decoders-count').textContent === '' && pop.hidden,
+    'decoder removed');
   $('decoders-btn').dispatch('click');
-  $('decoders-btn').dispatch('click');
+  check($('dec-dock').hidden, 'decoder list closes');
 }
 
 // Channel order: Alt+Down in a name box, dragging a grip, Reset order

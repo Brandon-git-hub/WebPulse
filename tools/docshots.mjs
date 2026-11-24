@@ -54,13 +54,13 @@ try {
   await sleep(500);
   await frame(1500);
 
-  // UART and SPI decoders (channels are picked by name).
+  // UART and SPI decoders from the docked list (channels are picked by name).
+  await ui(`document.getElementById('dec-dock').hidden && document.getElementById('decoders-btn').click();`);
+  await b.waitFor(`document.querySelectorAll('#dec-catalog .dec-entry').length > 0`, 5000);
   for (const key of ['builtin:uart', 'builtin:spi']) {
-    await ui(`document.getElementById('decoders-pop').hidden || document.getElementById('decoders-btn').click();`);
-    await b.waitFor(`document.getElementById('dec-add-sel').options.length > 0`, 5000);
-    await ui(`const s = document.getElementById('dec-add-sel'); s.value = '${key}'; document.getElementById('dec-add').click();`);
+    await ui(`document.querySelector('#dec-catalog [data-key="${key}"]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));`);
   }
-  await ui(`document.getElementById('decoders-btn').click();`);   // close the panel
+  await ui(`document.getElementById('decoders-btn').click();`);   // close the list
   await idle();
   await sleep(400);
   await frame(1500);
@@ -125,9 +125,9 @@ try {
   // The decoder editor and the channel picker, cropped.
   await ui(`document.querySelector('#dec-labels .dec-label').click();`);
   await sleep(300);
-  const pop = await el('#decoders-pop');
-  await save('decoder-editor.png', { x: pop.x - 12, y: 0, width: pop.width + 24, height: pop.y + pop.height + 12 });
-  await ui(`document.getElementById('decoders-btn').click(); document.getElementById('channels-btn').click();`);
+  const pop = await el('#dec-pop');
+  await save('decoder-editor.png', { x: 0, y: Math.max(0, pop.y - 12), width: pop.x + pop.width + 12, height: pop.height + 24 });
+  await ui(`document.querySelector('#dec-pop .btns button:last-child').click(); document.getElementById('channels-btn').click();`);
   await sleep(300);
   const ch = await el('#channels-pop');
   await save('channels.png', { x: Math.max(0, ch.x - 12), y: 0, width: ch.width + 24, height: ch.y + ch.height + 12 });

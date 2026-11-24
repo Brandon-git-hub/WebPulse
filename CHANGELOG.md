@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Decoders are added the way PulseView does it. The **Decoders** button opens a
+  list docked on the right: search by name, description or channel; the
+  selected decoder's channels and options are described below the list;
+  double-click it or press Enter to add it. The list stays open for adding
+  more.
+- A decoder's settings open in a popup beside its row label (click, or
+  right-click): name, colour, channels with their descriptions, and options.
+  Each change applies at once, with no Apply button. Esc or a click outside
+  closes the popup.
+
 ## 0.2.3
 
 - Windows: double-clicking `webpulse.exe` no longer leaves a console window.

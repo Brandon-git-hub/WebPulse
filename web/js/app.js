@@ -4,7 +4,7 @@
 
 import { formatFreq, formatRate, formatSI, formatTime, parseSI } from './format.js';
 import { CHANNELS, DEC_ROW_H, RULER_H, ROW_H, Renderer, loadTheme } from './renderer.js';
-import { Decoders } from './decoders.js';
+import { Decoders, PALETTE } from './decoders.js';
 import { Viewport } from './viewport.js';
 
 const $ = (id) => document.getElementById(id);
@@ -51,6 +51,7 @@ function saveSettings() {
     channels: channels.map(({ name, custom, trig, enabled }) => ({ name, color: custom, trig, enabled })),
     order,
     decoders: decoders.serialize(),
+    decoderDock: settings.decoderDock === true,
   };
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(s));
@@ -439,18 +440,22 @@ function syncDecoders(structure = true) {
   for (const r of rows) {
     const el = document.createElement('div');
     el.className = 'dec-label' + (r.error && r.status ? ' err' : '');
+    el.dataset.uid = String(r.inst.uid);
     el.style.setProperty('--c', r.color);
     el.innerHTML = '<span class="bar"></span><span class="txt"></span>';
     el.querySelector('.txt').textContent = r.label;
-    el.title = r.status || `${r.label} (click to edit)`;
-    el.addEventListener('click', () => {
-      showDecoderPanel(true);
-      editDecoder(r.inst);
-    });
+    el.title = r.status || `${r.label} (click for settings)`;
+    const open = (ev) => {
+      ev.preventDefault();
+      showDecoderSettings(decPop.inst === r.inst && ev.type === 'click' ? null : r.inst, el);
+    };
+    el.addEventListener('click', open);
+    el.addEventListener('contextmenu', open);
     box.appendChild(el);
   }
   $('decoders-count').textContent = decoders.list.length ? String(decoders.list.length) : '';
-  renderDecoderList();
+  if (decPop.inst && !decoders.list.includes(decPop.inst)) showDecoderSettings(null);
+  else if (decPop.inst) placeDecoderSettings();
 }
 
 function chLabel(c) {
@@ -458,151 +463,344 @@ function chLabel(c) {
   return ch.name === `CH${c}` ? ch.name : `CH${c} ${ch.name}`;
 }
 
-function buildDecoderPanel() {
-  const btn = $('decoders-btn'), pop = $('decoders-pop');
-  btn.addEventListener('click', () => showDecoderPanel(pop.hidden));
-  document.addEventListener('pointerdown', (ev) => {
-    if (!pop.hidden && !pop.contains(ev.target) && !btn.contains(ev.target)) showDecoderPanel(false);
-  });
-  pop.addEventListener('keydown', (ev) => {
-    if (ev.key !== 'Escape') return;
-    showDecoderPanel(false);
-    btn.focus();
-  });
-  $('dec-add').addEventListener('click', () => {
-    const inst = decoders.add($('dec-add-sel').value, order.filter((c) => channels[c].enabled),
-      channels.map((ch) => ch.name));
-    if (!inst) return;
-    saveSettings();
-    editDecoder(inst);
+// ---- decoder list (docked on the right) --------------------------------------------------
+//
+// Like PulseView's decoder selector: a search box over the list of decoders,
+// the one picked is described below, double-click or Enter adds it. The panel
+// stays open, so several decoders can be added one after the other.
+
+const dock = { sel: null };     // key of the selected decoder
+
+function buildDecoderDock() {
+  $('decoders-btn').addEventListener('click', () => showDecoderDock($('dec-dock').hidden));
+  $('dock-close').addEventListener('click', () => showDecoderDock(false));
+  const search = $('dec-search');
+  search.addEventListener('input', () => renderDecoderCatalog());
+  search.addEventListener('keydown', (ev) => {
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      ev.preventDefault();
+      moveDecoderSelection(ev.key === 'ArrowDown' ? 1 : -1);
+    } else if (ev.key === 'Enter') {
+      ev.preventDefault();
+      // Enter adds the selected decoder, or the only one left by the search.
+      const shown = visibleDecoderDefs().filter((d) => d.def);
+      const key = shown.some((d) => d.key === dock.sel) ? dock.sel : shown.length === 1 ? shown[0].key : null;
+      if (key) addDecoder(key);
+    } else if (ev.key === 'Escape') {
+      ev.preventDefault();
+      if (search.value) {
+        search.value = '';
+        renderDecoderCatalog();
+      } else {
+        showDecoderDock(false);
+      }
+    }
   });
   $('dec-reload').addEventListener('click', () => decoders.loadDefs().then(() => {
-    fillDecoderMenu();
+    renderDecoderCatalog();
     toast(`Decoders reloaded (${decoders.defs.filter((d) => d.def).length} available)`, 'info');
   }));
+  showDecoderDock(settings.decoderDock === true, false);
 }
 
-function showDecoderPanel(open) {
-  $('decoders-pop').hidden = !open;
-  $('decoders-btn').setAttribute('aria-expanded', String(open));
-  if (!open) $('dec-editor').hidden = true;
-  else renderDecoderList();
-}
-
-function fillDecoderMenu() {
-  const sel = $('dec-add-sel');
-  sel.textContent = '';
-  for (const source of ['built-in', 'yours']) {
-    const defs = decoders.defs.filter((d) => d.source === source);
-    if (!defs.length) continue;
-    const g = document.createElement('optgroup');
-    g.label = source === 'built-in' ? 'Built-in' : 'Your decoders';
-    for (const d of defs) {
-      const o = document.createElement('option');
-      o.value = d.key;
-      o.textContent = d.def ? `${d.def.name}${d.def.desc ? ' – ' + d.def.desc : ''}` : `${d.name} (error: ${d.error})`;
-      o.disabled = !d.def;
-      g.appendChild(o);
-    }
-    sel.appendChild(g);
+function showDecoderDock(open, focus = true) {
+  $('dec-dock').hidden = !open;
+  $('decoders-btn').setAttribute('aria-pressed', String(open));
+  if (open) {
+    renderDecoderCatalog();
+    if (focus) $('dec-search').focus();
   }
-  $('dec-note').textContent = decoders.userDir
-    ? `Your own decoders are loaded from ${decoders.userDir} (see README, "Protocol decoders").`
-    : '';
+  if (settings.decoderDock !== open) {
+    settings.decoderDock = open;
+    saveSettings();
+  }
 }
 
-function renderDecoderList() {
-  const list = $('dec-list');
+/** The decoder modules that match the search text (name, id, description, channels). */
+function visibleDecoderDefs() {
+  const words = $('dec-search').value.toLowerCase().split(/\s+/).filter(Boolean);
+  return decoders.defs.filter((d) => {
+    const def = d.def || {};
+    const text = [d.name, d.key.replace(/^\w+:/, ''), def.id, def.desc,
+      ...(def.channels || []).flatMap((c) => [c.name, c.id, ...(c.aliases || [])])]
+      .filter(Boolean).join(' ').toLowerCase();
+    return words.every((w) => text.includes(w));
+  });
+}
+
+function renderDecoderCatalog() {
+  const list = $('dec-catalog');
   list.textContent = '';
-  for (const inst of decoders.list) {
-    const d = decoders.def(inst.key);
-    const st = decoders.state.get(inst.uid) || {};
-    const item = document.createElement('div');
-    item.className = 'dec-item';
-    item.style.setProperty('--c', inst.color);
-    item.innerHTML = '<i class="sw"></i><span class="nm"></span><span class="info"></span>' +
-      '<button type="button" class="edit">Edit</button><button type="button" class="del" title="Remove">✕</button>';
-    item.querySelector('.nm').textContent = inst.label;
-    const info = item.querySelector('.info');
-    if (st.status === 'error') {
-      info.textContent = st.error;
-      info.classList.add('err');
-    } else if (d) {
-      info.textContent = (d.def.channels || []).filter((c) => inst.assign[c.id] != null && inst.assign[c.id] !== '')
-        .map((c) => `${c.name}=CH${inst.assign[c.id]}`).join(' ');
+  const shown = visibleDecoderDefs();
+  if (!shown.some((d) => d.key === dock.sel)) dock.sel = (shown.find((d) => d.def) || {}).key || null;
+  for (const source of ['built-in', 'yours']) {
+    const defs = shown.filter((d) => d.source === source);
+    if (!defs.length) continue;
+    const g = document.createElement('div');
+    g.className = 'dec-group';
+    g.textContent = source === 'built-in' ? 'Built-in' : 'Your decoders';
+    list.appendChild(g);
+    for (const d of defs) {
+      const el = document.createElement('div');
+      el.className = 'dec-entry' + (d.def ? '' : ' bad') + (d.key === dock.sel ? ' sel' : '');
+      el.dataset.key = d.key;
+      el.setAttribute('role', 'option');
+      el.setAttribute('aria-selected', String(d.key === dock.sel));
+      el.title = d.def ? 'Double-click to add' : d.error;
+      el.innerHTML = '<span class="nm"></span><span class="id"></span><div class="d"></div>';
+      el.querySelector('.nm').textContent = d.name;
+      el.querySelector('.id').textContent = d.key.replace(/^\w+:/, '');
+      el.querySelector('.d').textContent = d.def ? d.def.desc || '' : `cannot load: ${d.error}`;
+      el.addEventListener('click', () => selectDecoderDef(d.key));
+      el.addEventListener('dblclick', () => d.def && addDecoder(d.key));
+      list.appendChild(el);
     }
-    item.querySelector('.edit').addEventListener('click', () => editDecoder(inst));
-    item.querySelector('.del').addEventListener('click', () => {
-      decoders.remove(inst);
-      $('dec-editor').hidden = true;
-      saveSettings();
-    });
-    list.appendChild(item);
   }
+  if (!shown.length) {
+    const none = document.createElement('div');
+    none.className = 'none';
+    none.textContent = decoders.defs.length ? 'No decoder matches.' : 'Loading…';
+    list.appendChild(none);
+  }
+  renderDecoderInfo();
+  $('dec-note').textContent = decoders.userDir ? `Your own decoders: ${decoders.userDir}` : '';
 }
 
-/** Show the settings of one decoder: label, channel assignment, options. */
-function editDecoder(inst) {
-  const d = decoders.def(inst.key);
-  const form = $('dec-editor');
-  form.textContent = '';
-  form.hidden = false;
-  if (!d) {
-    form.innerHTML = '<p class="desc"></p>';
-    form.querySelector('p').textContent = `Decoder ${inst.key} is not available.`;
+function selectDecoderDef(key) {
+  dock.sel = key;
+  for (const el of $('dec-catalog').children) {
+    if (!el.dataset.key) continue;
+    el.classList.toggle('sel', el.dataset.key === key);
+    el.setAttribute('aria-selected', String(el.dataset.key === key));
+    if (el.dataset.key === key && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+  }
+  renderDecoderInfo();
+}
+
+function moveDecoderSelection(step) {
+  const keys = visibleDecoderDefs().map((d) => d.key);
+  if (!keys.length) return;
+  const k = keys.indexOf(dock.sel);
+  selectDecoderDef(keys[Math.max(0, Math.min(keys.length - 1, k < 0 ? 0 : k + step))]);
+}
+
+/** What the selected decoder is and needs, with an Add button. */
+function renderDecoderInfo() {
+  const box = $('dec-info');
+  box.textContent = '';
+  const d = decoders.defs.find((x) => x.key === dock.sel);
+  if (!d) return;
+  const add = (tag, text, cls) => {
+    const el = document.createElement(tag);
+    el.textContent = text;
+    if (cls) el.className = cls;
+    box.appendChild(el);
+    return el;
+  };
+  add('h4', d.name);
+  if (!d.def) {
+    add('p', `This decoder cannot be loaded: ${d.error}`, 'err');
     return;
   }
-  const add = (html) => {
-    const t = document.createElement('template');
-    t.innerHTML = html;
-    form.appendChild(t.content);
-  };
-  const esc = escapeHtml;
-  add(`<h4>${esc(d.def.name)}</h4>` + (d.def.desc ? `<p class="desc">${esc(d.def.desc)}</p>` : ''));
-  add(`<label for="dec-f-label">Label</label><input id="dec-f-label" maxlength="40" value="${esc(inst.label)}">`);
-  add('<div class="sec">Channels</div>');
+  if (d.def.desc) add('p', d.def.desc);
+  add('div', 'Channels', 'sec');
+  const ul = add('ul', '');
   for (const c of d.def.channels) {
-    const opts = (c.optional ? ['<option value="">—</option>'] : [])
-      .concat(channels.map((_, k) => `<option value="${k}">${esc(chLabel(k))}</option>`)).join('');
-    add(`<label for="dec-c-${c.id}" title="${esc(c.desc || '')}">${esc(c.name)}${c.optional ? '' : ' *'}</label>` +
-        `<select id="dec-c-${c.id}" data-ch="${c.id}">${opts}</select>`);
-    form.querySelector(`[data-ch="${c.id}"]`).value = inst.assign[c.id] == null ? '' : String(inst.assign[c.id]);
+    const li = document.createElement('li');
+    li.innerHTML = '<b></b><span class="k"></span>';
+    li.querySelector('b').textContent = c.name + (c.optional ? '' : ' *');
+    li.querySelector('.k').textContent = c.desc ? ` – ${c.desc}` : '';
+    ul.appendChild(li);
   }
-  if ((d.def.options || []).length) add('<div class="sec">Options</div>');
-  for (const o of d.def.options || []) {
-    const cur = inst.options[o.id] ?? o.default;
-    if (Array.isArray(o.values)) {
-      add(`<label for="dec-o-${o.id}">${esc(o.name)}</label><select id="dec-o-${o.id}" data-opt="${o.id}">` +
-          o.values.map((v) => `<option value="${esc(String(v))}">${esc(String(v))}</option>`).join('') + '</select>');
-      form.querySelector(`[data-opt="${o.id}"]`).value = String(cur);
-    } else {
-      add(`<label for="dec-o-${o.id}">${esc(o.name)}</label><input id="dec-o-${o.id}" data-opt="${o.id}" ` +
-          `${typeof o.default === 'number' ? 'type="number" step="any"' : ''} value="${esc(String(cur))}">`);
-    }
+  if ((d.def.options || []).length) {
+    add('div', 'Options', 'sec');
+    add('p', d.def.options.map((o) => o.name).join(', '));
   }
-  add('<div class="btns"><button type="button" class="del">Remove</button>' +
-      '<button type="button" class="cancel">Close</button><button type="submit" class="primary">Apply</button></div>');
-  form.querySelector('.cancel').addEventListener('click', () => { form.hidden = true; });
-  form.querySelector('.btns .del').addEventListener('click', () => {
-    decoders.remove(inst);
-    form.hidden = true;
+  add('p', '* required', 'k');
+  const btn = add('button', `Add ${d.name}`, 'primary');
+  btn.type = 'button';
+  btn.addEventListener('click', () => addDecoder(d.key));
+}
+
+function addDecoder(key) {
+  const inst = decoders.add(key, order.filter((c) => channels[c].enabled), channels.map((ch) => ch.name));
+  if (!inst) return;
+  saveSettings();
+  // Point out the new rows in the side list; their settings are a click away.
+  for (const el of $('dec-labels').children) {
+    if (el.dataset.uid !== String(inst.uid)) continue;
+    el.classList.add('flash');
+    if (el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+// ---- decoder settings (popup next to its label) -----------------------------------------
+//
+// Like PulseView's decode trace popup: name, colour, a channel per decoder
+// input and the options. Every change applies (and decodes again) at once.
+
+const decPop = { inst: null };
+
+function buildDecoderSettings() {
+  document.addEventListener('pointerdown', (ev) => {
+    if (!decPop.inst) return;
+    const t = ev.target;
+    if ($('dec-pop').contains(t) || (t.closest && t.closest('.dec-label'))) return;
+    showDecoderSettings(null);
+  });
+  $('dec-pop').addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Escape') return;
+    ev.stopPropagation();
+    showDecoderSettings(null);
+  });
+  if (typeof addEventListener === 'function') addEventListener('resize', () => decPop.inst && placeDecoderSettings());
+  $('channels').addEventListener('scroll', () => decPop.inst && placeDecoderSettings());
+}
+
+function showDecoderSettings(inst) {
+  decPop.inst = inst;
+  const pop = $('dec-pop');
+  for (const el of $('dec-labels').children) {
+    el.classList.toggle('open', !!inst && el.dataset.uid === String(inst.uid));
+  }
+  if (!inst) {
+    pop.hidden = true;
+    pop.textContent = '';
+    return;
+  }
+  fillDecoderSettings(inst);
+  pop.hidden = false;
+  placeDecoderSettings();
+}
+
+/** Beside the decoder's first label, kept inside the window. */
+function placeDecoderSettings() {
+  const pop = $('dec-pop');
+  const inst = decPop.inst;
+  const label = [...$('dec-labels').children].find((el) => el.dataset.uid === String(inst.uid));
+  updateDecoderSettingsStatus();
+  if (!label || !label.getBoundingClientRect || !pop.getBoundingClientRect) return;
+  for (const el of $('dec-labels').children) el.classList.toggle('open', el.dataset.uid === String(inst.uid));
+  const r = label.getBoundingClientRect();
+  const p = pop.getBoundingClientRect();
+  const vw = globalThis.innerWidth || 1200, vh = globalThis.innerHeight || 800;
+  const left = Math.max(8, Math.min(r.right + 6, vw - p.width - 8));
+  const top = Math.max(8, Math.min(r.top - 10, vh - p.height - 8));
+  pop.style.left = `${left}px`;
+  pop.style.top = `${top}px`;
+  pop.style.setProperty('--c', inst.color);
+}
+
+function updateDecoderSettingsStatus() {
+  const el = $('dec-pop').querySelector('.status');
+  if (!el || !decPop.inst) return;
+  const st = decoders.state.get(decPop.inst.uid) || {};
+  el.className = 'status' + (st.status === 'error' ? ' err' : '');
+  el.textContent = st.status === 'error' ? st.error
+    : st.status === 'running' ? 'Decoding…'
+    : vp.capture ? '' : 'Decodes after the next capture.';
+}
+
+function fillDecoderSettings(inst) {
+  const pop = $('dec-pop');
+  pop.textContent = '';
+  const d = decoders.def(inst.key);
+  const el = (tag, props = {}) => Object.assign(document.createElement(tag), props);
+  const row = (labelText, hint, control, required = false) => {
+    const lab = el('label');
+    lab.textContent = labelText + (required ? ' *' : '');
+    if (hint) lab.appendChild(el('small', { textContent: hint }));
+    if (control.id) lab.htmlFor = control.id;
+    pop.appendChild(lab);
+    pop.appendChild(control);
+  };
+  const head = el('div', { className: 'head' });
+  head.appendChild(el('b', { textContent: d ? d.def.name : inst.key }));
+  head.appendChild(el('p', { textContent: d ? d.def.desc || '' : 'This decoder is not available (any more).' }));
+  pop.appendChild(head);
+  pop.appendChild(el('p', { className: 'status' }));
+
+  // Name and colour: only the look, no decoding again.
+  const name = el('input', { id: 'dec-f-label', maxLength: 40, value: inst.label });
+  name.addEventListener('change', () => {
+    decoders.restyle(inst, { label: name.value.trim() || (d ? d.def.name : inst.key) });
     saveSettings();
   });
-  form.onsubmit = (ev) => {
-    ev.preventDefault();
-    const assign = {}, options = {};
-    for (const c of d.def.channels) {
-      const v = form.querySelector(`[data-ch="${c.id}"]`).value;
-      assign[c.id] = v === '' ? null : Number(v);
-    }
-    for (const o of d.def.options || []) {
-      const v = form.querySelector(`[data-opt="${o.id}"]`).value;
-      // Keep numbers as numbers (the select / input give strings).
-      options[o.id] = typeof o.default === 'number' && v !== '' && !Number.isNaN(Number(v)) ? Number(v) : v;
-    }
-    decoders.update(inst, { label: form.querySelector('#dec-f-label').value.trim() || d.def.name, assign, options });
+  row('Name', '', name);
+  const sw = el('div', { className: 'swatches' });
+  const setColor = (c) => {
+    decoders.restyle(inst, { color: c });
+    for (const b of sw.children) b.classList.toggle('on', b.dataset.c === c);
+    pick.value = c;
     saveSettings();
   };
+  for (const c of PALETTE) {
+    const b = el('button', { type: 'button', title: c });
+    b.dataset.c = c;
+    b.style.setProperty('--sw', c);
+    b.classList.toggle('on', c === inst.color);
+    b.addEventListener('click', () => setColor(c));
+    sw.appendChild(b);
+  }
+  const pick = el('input', { type: 'color', value: inst.color, title: 'Other colour' });
+  pick.addEventListener('input', () => setColor(pick.value));
+  sw.appendChild(pick);
+  row('Colour', '', sw);
+
+  if (d) {
+    pop.appendChild(el('div', { className: 'sec', textContent: 'Channels' }));
+    for (const c of d.def.channels) {
+      const sel = el('select', { id: `dec-c-${c.id}` });
+      sel.dataset.ch = c.id;
+      sel.appendChild(el('option', { value: '', textContent: '—' }));
+      for (const k of order) {
+        sel.appendChild(el('option', { value: String(k), textContent: chLabel(k) + (channels[k].enabled ? '' : ' (hidden)') }));
+      }
+      sel.value = inst.assign[c.id] == null ? '' : String(inst.assign[c.id]);
+      sel.addEventListener('change', () => {
+        decoders.update(inst, { assign: { ...inst.assign, [c.id]: sel.value === '' ? null : Number(sel.value) } });
+        saveSettings();
+      });
+      row(c.name, c.desc || '', sel, !c.optional);
+    }
+    if ((d.def.options || []).length) pop.appendChild(el('div', { className: 'sec', textContent: 'Options' }));
+    for (const o of d.def.options || []) {
+      const cur = inst.options[o.id] ?? o.default;
+      let ctl;
+      if (Array.isArray(o.values)) {
+        ctl = el('select', { id: `dec-o-${o.id}` });
+        for (const v of o.values) ctl.appendChild(el('option', { value: String(v), textContent: String(v) }));
+      } else {
+        ctl = el('input', { id: `dec-o-${o.id}` });
+        if (typeof o.default === 'number') Object.assign(ctl, { type: 'number', step: 'any' });
+      }
+      ctl.dataset.opt = o.id;
+      ctl.value = String(cur);
+      // Inputs apply on Enter or when left, selects at once.
+      ctl.addEventListener('change', () => {
+        const v = ctl.value;
+        const val = typeof o.default === 'number' && v !== '' && !Number.isNaN(Number(v)) ? Number(v) : v;
+        decoders.update(inst, { options: { ...inst.options, [o.id]: val } });
+        saveSettings();
+      });
+      row(o.name, o.desc || '', ctl);
+    }
+    if (d.def.channels.some((c) => !c.optional)) pop.appendChild(el('p', { className: 'note', textContent: '* Required channels' }));
+  }
+
+  const btns = el('div', { className: 'btns' });
+  const del = el('button', { type: 'button', className: 'del', textContent: 'Remove decoder' });
+  del.addEventListener('click', () => {
+    showDecoderSettings(null);
+    decoders.remove(inst);
+    saveSettings();
+  });
+  const close = el('button', { type: 'button', textContent: 'Close' });
+  close.addEventListener('click', () => showDecoderSettings(null));
+  btns.appendChild(del);
+  btns.appendChild(close);
+  pop.appendChild(btns);
+  updateDecoderSettingsStatus();
 }
 
 /** Status bar text for the annotation under the pointer. */
@@ -1302,8 +1500,12 @@ document.addEventListener('keydown', (ev) => {
         showChannelPicker(false);
         break;
       }
-      if (!$('decoders-pop').hidden) {
-        showDecoderPanel(false);
+      if (decPop.inst) {
+        showDecoderSettings(null);
+        break;
+      }
+      if (!$('dec-dock').hidden) {
+        showDecoderDock(false);
         break;
       }
       renderer.cursors = { a: null, b: null };
@@ -1449,9 +1651,10 @@ function updateViewInfo() {
 async function init() {
   buildChannelList();
   buildChannelPicker();
-  buildDecoderPanel();
+  buildDecoderDock();
+  buildDecoderSettings();
   document.documentElement.style.setProperty('--dec-row-h', DEC_ROW_H + 'px');
-  decoders.loadDefs().then(fillDecoderMenu);
+  decoders.loadDefs().then(renderDecoderCatalog);
   for (const id of ['samples', 'pre', 'timeout']) {
     if (settings[id] != null) $(id).value = settings[id];
   }

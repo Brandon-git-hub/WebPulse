@@ -383,41 +383,146 @@ button.primary:hover:not(:disabled) { filter: brightness(1.1); border-color: var
 .dec-label.err .txt { color: var(--danger); }
 .dec-label:hover { background: var(--panel-2); }
 
-#decoders-pop { width: min(460px, calc(100vw - 32px)); }
-.dec-list { display: flex; flex-direction: column; gap: 4px; }
-.dec-list:empty::before { content: "No decoders yet."; color: var(--muted); font-size: 12px; }
-.dec-item {
+.dec-label.flash { animation: dec-flash 1.2s ease-out; }
+@keyframes dec-flash { from { background: color-mix(in srgb, var(--c) 35%, transparent); } }
+.dec-label.open { background: var(--panel-2); box-shadow: inset -2px 0 0 var(--c); }
+
+/* Decoder list docked on the right: search, pick, double-click to add. */
+.main-row {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.main-row .workspace { min-width: 0; }
+.dock {
+  flex: 0 0 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  min-height: 0;
+}
+.dock-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 6px;
-  border-radius: 6px;
-  background: var(--panel-2);
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
 }
-.dec-item .sw { width: 10px; height: 10px; border-radius: 2px; background: var(--c); margin: 0; }
-.dec-item .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dec-item .info { color: var(--muted); font: 11px var(--mono); white-space: nowrap; }
-.dec-item .info.err { color: var(--danger); white-space: normal; }
-.dec-item button { padding: 2px 8px; font-weight: 500; font-size: 12px; }
-.dec-add { display: flex; gap: 6px; }
-.dec-add select { flex: 1; min-width: 0; }
-.dec-editor {
+.dock input[type="search"] { width: 100%; padding: 5px 8px; }
+.dec-catalog {
+  flex: 1 1 50%;
+  min-height: 80px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.dec-catalog:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.dec-group {
+  position: sticky;
+  top: 0;
+  padding: 4px 8px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+.dec-entry {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--row-line);
+  cursor: pointer;
+  user-select: none;
+}
+.dec-entry .nm { font-weight: 600; }
+.dec-entry .id { margin-left: 6px; color: var(--muted); font: 11px var(--mono); }
+.dec-entry .d {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dec-entry:hover { background: var(--panel-2); }
+.dec-entry.sel { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.dec-entry.bad .nm { color: var(--danger); }
+.dec-catalog .none { padding: 10px 8px; color: var(--muted); font-size: 12px; }
+.dec-info {
+  flex: 0 1 auto;
+  max-height: 45%;
+  overflow-y: auto;
+  font-size: 12px;
+}
+.dec-info:empty::before { content: "Select a decoder to see what it needs. Double-click or press Enter to add it."; color: var(--muted); }
+.dec-info h4 { margin: 0 0 2px; font-size: 13px; }
+.dec-info p { margin: 0 0 6px; color: var(--muted); }
+.dec-info p.err { color: var(--danger); }
+.dec-info .sec { margin: 6px 0 2px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; }
+.dec-info ul { margin: 0; padding-left: 16px; }
+.dec-info li .k { color: var(--muted); }
+.dec-info button { margin-top: 8px; width: 100%; }
+.dock-foot { display: flex; align-items: flex-end; gap: 8px; }
+.dock-foot .pop-note { flex: 1; margin: 0; overflow-wrap: anywhere; }
+
+/* Settings of one decoder, opened from its label (like PulseView's popup):
+ * every change applies at once. */
+.dec-pop {
+  position: fixed;
+  z-index: 30;
+  width: min(340px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--c);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px var(--shadow);
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 6px 10px;
   align-items: center;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  font-size: 12px;
 }
-.dec-editor h4 { grid-column: 1 / -1; margin: 0; font-size: 13px; }
-.dec-editor .desc { grid-column: 1 / -1; margin: -2px 0 2px; color: var(--muted); font-size: 12px; }
-.dec-editor .sec { grid-column: 1 / -1; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; margin-top: 4px; }
-.dec-editor label { color: var(--muted); font-size: 12px; }
-.dec-editor input, .dec-editor select { width: 100%; padding: 3px 6px; }
-.dec-editor .btns { grid-column: 1 / -1; display: flex; gap: 6px; justify-content: flex-end; }
-.dec-editor .btns button { padding: 3px 10px; font-size: 12px; }
-.dec-editor .btns .del { margin-right: auto; }
+.dec-pop .head { grid-column: 1 / -1; }
+.dec-pop .head b { font-size: 13px; }
+.dec-pop .head p { margin: 2px 0 0; color: var(--muted); }
+.dec-pop .status { grid-column: 1 / -1; margin: 0; color: var(--muted); }
+.dec-pop .status.err { color: var(--danger); }
+.dec-pop .status:empty { display: none; }
+.dec-pop .sec {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+.dec-pop label { color: var(--text); }
+.dec-pop label small { display: block; color: var(--muted); font-size: 11px; }
+.dec-pop input, .dec-pop select { width: 100%; padding: 3px 6px; }
+.dec-pop .swatches { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.dec-pop .swatches button {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 4px;
+  background: var(--sw);
+  border: 2px solid transparent;
+}
+.dec-pop .swatches button.on { border-color: var(--text); }
+.dec-pop .swatches input[type="color"] { width: 26px; height: 20px; padding: 0; border: 0; background: none; }
+.dec-pop .note { grid-column: 1 / -1; margin: 2px 0 0; color: var(--muted); font-size: 11px; }
+.dec-pop .btns { grid-column: 1 / -1; display: flex; justify-content: space-between; margin-top: 4px; }
+.dec-pop .btns button { padding: 3px 10px; font-size: 12px; }
+.dec-pop .btns .del { color: var(--danger); }
 
 /* ---- channel picker ------------------------------------------------------- */
 
@@ -557,5 +662,8 @@ button.mini { padding: 0 6px; font-size: 10px; line-height: 16px; }
 @media (max-width: 900px) {
   .keys { display: none; }
   .channels { width: 170px; }
+  .dock { flex-basis: 240px; }
   .group.right { margin-left: 0; }
 }
+
+#decoders-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }

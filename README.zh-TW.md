@@ -200,7 +200,7 @@ WebPulse 0.2.3 listening on port 9002  (Ctrl+C to quit)
 
 ## 協定解碼器
 
-點選工具列的 **Decoders** 可在通道下方加入解碼器：
+點選工具列的 **Decoders**，右側會開啟解碼器清單。可輸入關鍵字搜尋（名稱、說明或通道），在解碼器上按兩下或按 Enter，即可將其加入通道下方。加入後清單會保持開啟，方便連續加入多個解碼器。
 
 | 解碼器 | 說明 |
 |---|---|
@@ -211,13 +211,13 @@ WebPulse 0.2.3 listening on port 9002  (Ctrl+C to quit)
 | Counter | 為通道的每個邊緣編號 |
 
 - 新增解碼器時，會依通道名稱自動指派輸入。例如命名為 `SCLK` 的通道會指派給 SPI 的 CLK，命名為 `SDA` 的通道會指派給 I²C 的 SDA。
-- 點選解碼器的列名稱，即可修改通道指派與選項。
+- 點選解碼器的列名稱可開啟設定：名稱、顏色、通道與選項。每項修改都會立即套用並重新解碼；最下方為 **Remove decoder**（移除解碼器）。
 - 將滑鼠移至協定解碼標註上，狀態列會顯示完整內容。
 - 解碼器在瀏覽器中執行，且只處理所使用通道的訊號轉換點，因此即使是 2.56 億個取樣點的擷取，也約在一秒內完成解碼。
 
 ### 撰寫自訂解碼器
 
-自訂解碼器是一個 JavaScript 模組，放在執行檔旁的 `decoders/` 資料夾（或以 `--decoders DIR` 指定的資料夾）。新增或修改後，在 Decoders 面板點選 **Reload** 即可載入，不需重新啟動 WebPulse。`decoders/pwm.js` 是簡短的範例，`web/decoders/` 中的內建解碼器則是完整的參考實作。
+自訂解碼器是一個 JavaScript 模組，放在執行檔旁的 `decoders/` 資料夾（或以 `--decoders DIR` 指定的資料夾）。新增或修改後，點選解碼器清單下方的 **Reload** 即可載入，不需重新啟動 WebPulse。`decoders/pwm.js` 是簡短的範例，`web/decoders/` 中的內建解碼器則是完整的參考實作。
 
 ```js
 export default {

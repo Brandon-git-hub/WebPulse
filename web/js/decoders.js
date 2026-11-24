@@ -6,7 +6,7 @@ import { runDecoder } from './decode/runtime.js';
 import { fetchTransitions } from './decode/transitions.js';
 
 export const BUILTIN = ['uart', 'spi', 'i2c', 'parallel', 'counter'];
-const PALETTE = ['#4fa3e0', '#e0913a', '#5fb85f', '#d9578f', '#9a7ad8', '#3fb5a8'];
+export const PALETTE = ['#4fa3e0', '#e0913a', '#5fb85f', '#d9578f', '#9a7ad8', '#3fb5a8'];
 
 let nextUid = 1;
 
@@ -101,6 +101,12 @@ export class Decoders {
   update(inst, patch) {
     Object.assign(inst, patch);
     this.run(inst);
+    this.onUpdate();
+  }
+
+  /** Change only how a decoder looks (label, colour): no decoding again. */
+  restyle(inst, patch) {
+    Object.assign(inst, patch);
     this.onUpdate();
   }
 

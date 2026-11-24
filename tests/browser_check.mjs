@@ -81,16 +81,22 @@ try {
   await js(`document.getElementById('channels-btn').click()`);
   checkAlign(await js(ALIGN), 'CH3 hidden');
 
-  // Add UART and SPI decoders; they run in a Web Worker here.
-  await js(`(() => { document.getElementById('decoders-btn').click(); })()`);
-  await waitFor(`document.getElementById('dec-add-sel').options.length > 0`, 5000, 'decoder menu');
-  const userDec = await js(`[...document.getElementById('dec-add-sel').options].map((o) => o.value + (o.disabled ? '!' : '')).join(',')`);
+  // Add UART and SPI decoders from the docked list; they run in a Web Worker here.
+  await js(`document.getElementById('decoders-btn').click()`);
+  await waitFor(`document.querySelectorAll('#dec-catalog .dec-entry').length > 0`, 5000, 'decoder list');
+  const userDec = await js(`[...document.querySelectorAll('#dec-catalog .dec-entry')].map((e) => e.dataset.key + (e.classList.contains('bad') ? '!' : '')).join(',')`);
   check(userDec.includes('user:pwm.js') && !userDec.includes('pwm.js!'), `user decoder loads in the browser (${userDec})`);
-  await js(`(() => { const s = document.getElementById('dec-add-sel'); s.value = 'builtin:uart'; document.getElementById('dec-add').click(); })()`);
+  check(await js(`document.activeElement === document.getElementById('dec-search')`), 'search box focused');
+  // Double-click an entry, as in PulseView.
+  const entry = await js(`(() => { const r = document.querySelector('#dec-catalog [data-key="builtin:uart"]').getBoundingClientRect(); return { x: r.left + 20, y: r.top + 8 }; })()`);
+  for (const clickCount of [1, 2]) {
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: entry.x, y: entry.y, button: 'left', clickCount });
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: entry.x, y: entry.y, button: 'left', clickCount });
+  }
   await waitFor(`[...document.querySelectorAll('#dec-labels .dec-label')].length === 2 &&
     !document.querySelector('#dec-labels .dec-label').title.startsWith('decoding')`, 15000, 'UART decode in a worker');
   checkAlign(await js(ALIGN), 'with a decoder');
-  // Name CH1..3 like the simulator's SPI lines: Add picks them by name.
+  // Name CH1..3 like the simulator's SPI lines: adding SPI picks them by name.
   await js(`(() => {
     const rows = [...document.querySelectorAll('#ch-rows .ch')];
     const named = { 1: 'SCLK', 2: 'MOSI', 3: 'CS' };
@@ -99,14 +105,19 @@ try {
       if (named[c]) { const n = r.querySelector('.name'); n.value = named[c]; n.dispatchEvent(new Event('change')); }
     }
   })()`);
-  await js(`(() => { const s = document.getElementById('dec-add-sel'); s.value = 'builtin:spi'; document.getElementById('dec-add').click(); })()`);
+  // Search and Enter.
+  await js(`(() => { const s = document.getElementById('dec-search'); s.focus(); s.value = 'spi'; s.dispatchEvent(new Event('input')); })()`);
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
   await waitFor(`[...document.querySelectorAll('#dec-labels .dec-label')].length === 4 &&
     !document.querySelectorAll('#dec-labels .dec-label')[2].title.startsWith('decoding')`, 15000, 'SPI rows');
-  const spiInfo = await js(`[...document.querySelectorAll('.dec-item .info')].map((e) => e.textContent).join(' | ')`);
-  check(spiInfo.includes('CLK=CH1 MOSI=CH2 CS#=CH3'), `SPI channels picked by name (${spiInfo})`);
+  const spi = await js(`JSON.stringify(JSON.parse(localStorage.getItem('webpulse.settings.v1')).decoders[1].assign)`);
+  check(spi === '{"clk":1,"mosi":2,"miso":null,"cs":3}', `SPI channels picked by name (${spi})`);
   check(!(await js(`document.querySelectorAll('#dec-labels .dec-label')[2].classList.contains('err')`)), 'SPI decodes without error');
-  checkAlign(await js(ALIGN), 'with two decoders');
+  checkAlign(await js(ALIGN), 'with two decoders and the list open');
+  await shot('decoder-list.png');
   await js(`document.getElementById('decoders-btn').click()`);
+  checkAlign(await js(ALIGN), 'list closed again');
 
   // Hover the UART data row inside a burst: the status bar shows the byte.
   const cv = await js(`(() => { const r = document.getElementById('wave').getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width }; })()`);
@@ -146,13 +157,21 @@ try {
   checkAlign(await js(ALIGN), 'dark theme');
   await shot('dark-zoomed.png');
 
-  // Popovers open on screen
-  await js(`document.getElementById('decoders-btn').click()`);
+  // Decoder settings open beside the label, inside the window; a change
+  // applies at once.
   await js(`document.querySelector('#dec-labels .dec-label').click()`);
   await sleep(200);
-  const pop = await js(`(() => { const r = document.getElementById('decoders-pop').getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom, innerWidth, innerHeight]; })()`);
-  check(pop[0] >= 0 && pop[2] <= pop[4] && pop[1] >= 0, `decoder panel inside the window (${pop})`);
-  await shot('dark-decoder-editor.png');
+  const pop = await js(`(() => { const p = document.getElementById('dec-pop').getBoundingClientRect(),
+    l = document.querySelector('#dec-labels .dec-label').getBoundingClientRect();
+    return [p.left, p.top, p.right, p.bottom, innerWidth, innerHeight, l.right]; })()`);
+  check(!(await js(`document.getElementById('dec-pop').hidden`)) && pop[0] >= pop[6] && pop[2] <= pop[4] &&
+    pop[1] >= 0 && pop[3] <= pop[5], `decoder settings beside the label, inside the window (${pop})`);
+  await shot('dark-decoder-settings.png');
+  await js(`(() => { const s = document.getElementById('dec-o-format'); s.value = 'ascii'; s.dispatchEvent(new Event('change')); })()`);
+  await waitFor(`JSON.parse(localStorage.getItem('webpulse.settings.v1')).decoders[0].options.format === 'ascii'`, 3000, 'option applied');
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  check(await js(`document.getElementById('dec-pop').hidden`), 'Esc closes the decoder settings');
 
   check(errors.length === 0, `no script errors (${errors.join(' | ')})`);
 } catch (e) {
