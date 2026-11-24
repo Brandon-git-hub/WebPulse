@@ -77,8 +77,9 @@ jobs:
           CHROME=google-chrome node tests/browser_check.mjs http://127.0.0.1:18081/ screenshots
           kill "$pid"
 
+      # Only to see what went wrong; a passing run needs no screenshots.
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: failure()
         with:
           name: browser-screenshots
           path: screenshots/
@@ -151,12 +152,23 @@ jobs:
             exit 1
           fi
 
+      # GitHub zips every artifact, so the one for trying a build holds the
+      # files themselves: one download, one unzip, webpulse.exe inside.
       - name: Package
-        run: python3 tools/package.py build/win win64 dist
+        run: |
+          python3 tools/package.py --unpacked build/win win64 unpacked
+          python3 tools/package.py build/win win64 dist
 
       - uses: actions/upload-artifact@v4
         with:
           name: webpulse-win64
+          path: unpacked/
+
+      # The release .zip, only needed by the release job (tags).
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: release-win64
           path: dist/*
 
   release:
@@ -181,13 +193,17 @@ jobs:
             on' CHANGELOG.md > notes.md
           test -s notes.md || { echo "no CHANGELOG.md section for $VERSION" >&2; exit 1; }
 
-      # Only the packages: other artifacts (browser-check screenshots) are
-      # for looking at a CI run, not for the release.
+      # Only the packages: the Linux .tar.gz (kept as an archive so the
+      # executable bit survives) and the Windows .zip, not the unpacked
+      # Windows files or the browser-check screenshots.
       - uses: actions/download-artifact@v4
         with:
-          pattern: webpulse-*
+          name: webpulse-linux-x86_64
           path: dist
-          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-win64
+          path: dist
 
       - name: Checksums
         run: cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt

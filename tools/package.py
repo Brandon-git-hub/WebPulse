@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 """Package a build into a release archive.
 
-    tools/package.py BUILD_DIR PLATFORM OUT_DIR
+    tools/package.py [--unpacked] BUILD_DIR PLATFORM OUT_DIR
 
 PLATFORM is e.g. win64 (-> .zip with webpulse.exe) or linux-x86_64 (-> .tar.gz).
 The archive holds one top-level folder webpulse-<version>-<platform>/ with the
 executable, firmware/, decoders/ (example user decoders), the READMEs and
 LICENSE. The version is read from CMakeLists.txt; the archive path is printed
 on stdout.
+
+With --unpacked the same files are copied straight into OUT_DIR, without an
+archive or the top-level folder: for a CI artifact, which GitHub zips itself
+(an archive inside it would be a zip in a zip). Unpacked files lose the
+executable bit, so this is meant for Windows.
 """
 import pathlib
 import re
+import shutil
 import sys
 import tarfile
 import zipfile
@@ -26,9 +32,13 @@ def version():
 
 
 def main():
-    if len(sys.argv) != 4:
+    args = sys.argv[1:]
+    unpacked = bool(args) and args[0] == "--unpacked"
+    if unpacked:
+        args = args[1:]
+    if len(args) != 3:
         sys.exit(__doc__)
-    build, platform, out = (pathlib.Path(sys.argv[1]), sys.argv[2], pathlib.Path(sys.argv[3]))
+    build, platform, out = (pathlib.Path(args[0]), args[1], pathlib.Path(args[2]))
     windows = platform.startswith("win")
     exe = build / ("webpulse.exe" if windows else "webpulse")
     if not exe.is_file():
@@ -41,6 +51,12 @@ def main():
     files += [(f, f"decoders/{f.name}") for f in sorted((ROOT / "decoders").glob("*.js"))]
 
     out.mkdir(parents=True, exist_ok=True)
+    if unpacked:
+        for src, name in files:
+            (out / name).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, out / name)
+        print(out)
+        return
     if windows:
         path = out / f"{top}.zip"
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
