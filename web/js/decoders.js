@@ -4,6 +4,7 @@
 
 import { runDecoder } from './decode/runtime.js';
 import { fetchTransitions } from './decode/transitions.js';
+import { tr } from './i18n.js';
 
 export const BUILTIN = ['uart', 'spi', 'i2c', 'parallel', 'counter'];
 export const PALETTE = ['#4fa3e0', '#e0913a', '#5fb85f', '#d9578f', '#9a7ad8', '#3fb5a8'];
@@ -42,7 +43,7 @@ export class Decoders {
         defs.push(await loadDef(`user:${f}`, url, 'yours'));
       }
     } catch (e) {
-      this.onError(`Cannot list your decoders: ${e.message}`);
+      this.onError(tr('Cannot list your decoders: {error}', { error: e.message }));
     }
     this.defs = defs;
     for (const d of defs) if (d.error) this.onError(`${d.name}: ${d.error}`);
@@ -157,7 +158,7 @@ export class Decoders {
     const d = this.def(inst.key);
     if (!d) {
       st.status = 'error';
-      st.error = `decoder ${inst.key} is not available`;
+      st.error = tr('decoder {key} is not available', { key: inst.key });
       return;
     }
     if (!this.capture) return;
@@ -166,7 +167,7 @@ export class Decoders {
     const missing = (d.def.channels || []).filter((c) => !c.optional && !(c.id in assign));
     if (missing.length) {
       st.status = 'error';
-      st.error = `assign ${missing.map((c) => c.name).join(', ')}`;
+      st.error = tr('assign {names}', { names: missing.map((c) => c.name).join(', ') });
       return;
     }
     const mask = Object.values(assign).reduce((m, c) => m | (1 << c), 0);
@@ -216,11 +217,11 @@ export class Decoders {
     for (const inst of this.list) {
       const d = this.def(inst.key);
       const st = this.state.get(inst.uid) || {};
-      const defRows = d ? d.def.rows || [] : [{ id: '?', name: 'unavailable' }];
+      const defRows = d ? d.def.rows || [] : [{ id: '?', name: tr('unavailable') }];
       defRows.forEach((r, k) => {
         let status = '';
         if (k === 0) {
-          if (st.status === 'running') status = `decoding… ${Math.round(100 * (st.progress || 0))} %`;
+          if (st.status === 'running') status = tr('decoding… {pct} %', { pct: Math.round(100 * (st.progress || 0)) });
           else if (st.status === 'error') status = st.error;
         }
         out.push({

@@ -8,9 +8,30 @@
   double-click it or press Enter to add it. The list stays open for adding
   more.
 - A decoder's settings open in a popup beside its row label (click, or
-  right-click): name, colour, channels with their descriptions, and options.
+  right-click): name, colour, channels and options (descriptions are
+  tooltips).
   Each change applies at once, with no Apply button. Esc or a click outside
   closes the popup.
+- A **File** menu at the left of the toolbar replaces the Open, Save .sr,
+  VCD, CSV and PNG buttons: Open…, Save session, and Export ▸ with VCD, CSV
+  and PNG image in a submenu (hover, click or →). Ctrl+O opens, Ctrl+S saves;
+  the menu works with the keyboard. When channels are hidden, the export
+  tooltips say which ones are saved.
+- Toolbar in two rows. Row 1: File, Channels, Decoders and Help as alike
+  buttons; on the right the capture status, the connection status (a dot
+  and the board, "FX2 not connected" or "Simulator") and the theme switch.
+  Row 2: capture settings on the left; Run, zoom in, zoom out, Fit, previous
+  / next edge and A↔B on the right, where they are quicker to reach. Going
+  back to the previous view (the Back button and Backspace) is gone.
+- **Help** menu next to Decoders: **Keyboard shortcuts** (also `?`), every key
+  and mouse action in one list (it replaces the hint line in the status bar),
+  and **About WebPulse**: version, build date, OS, browser, device,
+  dependencies with their licenses, developer, GitHub and license.
+  `/api/device` reports `connected`, `build`, `os`, `civetweb` and `libusb`.
+- **Help** ▸ **Language** ▸ English / 繁體中文: the whole UI switches at once,
+  without a reload, and the choice is remembered; the first visit follows the
+  browser's language. Translations live in `web/js/i18n.js`. Decoder modules'
+  own names and options, and server messages, stay in English.
 
 ## 0.2.3
 

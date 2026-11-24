@@ -154,13 +154,19 @@ UART, SPI, PWM and other test signals.
 | Pan | Left drag, or Shift+wheel |
 | Fit the whole capture | `F` |
 | Zoom to cursors A–B | `Z` |
-| Previous view | `Backspace` |
 | Place cursor A / B | Shift+left / Shift+right click; hold to drag |
 | Move cursor A to the previous / next edge | `[` / `]` (cursor B: `{` / `}`) |
 | Go to the trigger | `T` |
 | Run / stop / clear cursors | `R` / `S` / `Esc` |
+| List of all shortcuts | `?`, or **Help** ▸ **Keyboard shortcuts** |
 
-The toolbar has the same zoom in, zoom out, Fit, A↔B and Back buttons.
+The toolbar has zoom in, zoom out, Fit, previous / next edge and A↔B buttons,
+on the right after **Run**. Row 1 shows whether the board is connected; the
+theme switch (Auto / Light / Dark) is at its right end. **Help** ▸ **About
+WebPulse** shows the version, build date, OS, dependencies and license.
+**Help** ▸ **Language** switches the UI between English and Traditional
+Chinese (繁體中文); the first time, WebPulse follows the browser's language.
+Decoders' own names and options stay in English.
 
 A cursor snaps to an edge within 8 px. Hold Alt while placing it to turn
 snapping off. Edge navigation uses the channel highlighted under the pointer.
@@ -189,11 +195,14 @@ reorder the channels; **Reset order** in the picker restores CH0 … CH7.
 
 ### Files
 
-| Button | Action |
+The **File** menu at the left of the toolbar:
+
+| Item | Action |
 |---|---|
-| **Open** (or drop a file on the page) | Opens a sigrok session file saved by PulseView or sigrok-cli. Channel names come from the file. Files with more than 8 channels load the first 8. |
-| **Save .sr** | Saves a session file that PulseView can open. Includes the channel names and only the shown channels. |
-| **VCD** / **CSV** / **PNG** | Exports the capture or a screenshot of the current view. |
+| **Open…** (Ctrl+O, or drop a file on the page) | Opens a sigrok session file saved by PulseView or sigrok-cli. Channel names come from the file. Files with more than 8 channels load the first 8. |
+| **Save session** (Ctrl+S) | Saves a session file (`.sr`) that PulseView can open. Includes the channel names and only the shown channels. |
+| **Export ▸ VCD / CSV** | The capture as a Value Change Dump or a CSV file, with only the shown channels. |
+| **Export ▸ PNG image** | The current view, with channel names and decoder annotations. |
 
 ## Command line
 
@@ -407,7 +416,7 @@ third_party/  CivetWeb 1.16 (MIT)
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/device` | Backend, model, firmware, supported rates, maximum samples |
+| GET | `/api/device` | Backend, model, firmware, `connected`, supported rates, maximum samples; version, build date, OS, CivetWeb and libusb versions (for Help ▸ About) |
 | POST | `/api/capture` | Start a capture: `{"rate":24000000,"samples":10000000,"pre":0.1,"trigger":"XXXXXXXR","timeout_ms":0}` |
 | POST | `/api/stop` | Stop; samples captured after the trigger are kept |
 | GET | `/api/status` | State (`idle` / `armed` / `capturing` / `processing` / `done` / `error`) and progress; `capture.changing` is the mask of channels that toggle |

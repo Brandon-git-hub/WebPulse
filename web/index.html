@@ -19,119 +19,160 @@
 </head>
 <body>
   <header class="toolbar">
-    <div class="brand">
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 12h3V4h4v8h3V4h4"/></svg>
-      <span>WebPulse</span>
-    </div>
+    <!-- Row 1: menus on the left, capture status on the right.
+         Row 2: capture settings on the left; Run and the view controls on the
+         right, where a right-handed mouse reaches them first. -->
+    <div class="tb-row">
+      <div class="tb-left">
+      <div class="brand">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 12h3V4h4v8h3V4h4"/></svg>
+        <span>WebPulse</span>
+      </div>
 
-    <div class="group">
-      <div class="popover-anchor">
-        <button id="channels-btn" aria-haspopup="true" aria-expanded="false"
-                title="Choose which channels are shown, triggered on and exported">
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 3h3V1h4v2h7v2H8v2H4V5H1zm0 8h7V9h4v2h3v2h-3v2H8v-2H1z"/></svg>
-          Channels <span id="channels-count" class="count"></span>
-        </button>
-        <div id="channels-pop" class="popover" hidden role="dialog" aria-label="Channels">
-          <div class="pop-grid" id="channels-grid"></div>
-          <div class="pop-actions">
-            <span>Enable</span>
-            <button data-act="enable" data-sel="all">All</button>
-            <button data-act="enable" data-sel="changing">Changing</button>
-            <button data-act="enable" data-sel="steady">Non-changing</button>
-            <button data-act="enable" data-sel="named">Named</button>
-            <button data-act="enable" data-sel="unnamed">Unnamed</button>
-            <span>Disable</span>
-            <button data-act="disable" data-sel="all">All</button>
-            <button data-act="disable" data-sel="changing">Changing</button>
-            <button data-act="disable" data-sel="steady">Non-changing</button>
-            <button data-act="disable" data-sel="named">Named</button>
-            <button data-act="disable" data-sel="unnamed">Unnamed</button>
-          </div>
-          <div class="pop-foot">
-            <p class="pop-note">Hidden channels are ignored by the trigger and left out of exports.
-              All 8 are still captured. Drag a channel by its ⠿ grip to reorder.</p>
-            <button id="order-reset" title="Show the channels as CH0 … CH7 again">Reset order</button>
+        <!-- File, Channels, Decoders: one set of buttons, alike. File's menu
+             holds open / save / export; new file actions go there too. -->
+        <div class="group menus">
+        <div class="popover-anchor">
+          <button id="file-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="file-menu"
+                  title="Open, save and export (Ctrl+O, Ctrl+S)" data-i18n-attr="title">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 3h5l1.5 1.5h6.5v9h-13zM3 6v6h10V6z"/></svg>
+            <span data-i18n>File</span>
+          </button>
+          <input id="open-file" type="file" accept=".sr" hidden>
+          <div id="file-menu" class="menu" role="menu" aria-label="File" hidden data-i18n-attr="aria-label">
+            <button id="open" role="menuitem" type="button"
+                    title="A sigrok / PulseView session file (.sr). You can also drop one on the window." data-i18n-attr="title"><span data-i18n>Open…</span><kbd>Ctrl+O</kbd></button>
+            <a id="export-sr" role="menuitem" class="disabled" download><span data-i18n>Save session</span><kbd>Ctrl+S</kbd></a>
+            <div class="menu-sep" role="separator"></div>
+            <div class="submenu" id="export-sub">
+              <button id="export-btn" role="menuitem" type="button" aria-haspopup="menu" aria-expanded="false"
+                      aria-controls="export-menu" disabled><span data-i18n>Export</span><span class="arrow" aria-hidden="true">▸</span></button>
+              <div id="export-menu" class="menu sub" role="menu" aria-label="Export" hidden data-i18n-attr="aria-label">
+                <a id="export-vcd" role="menuitem" class="disabled" download>VCD</a>
+                <a id="export-csv" role="menuitem" class="disabled" download>CSV</a>
+                <button id="export-png" role="menuitem" type="button" disabled data-i18n>PNG image</button>
+              </div>
+            </div>
           </div>
         </div>
+        <div class="popover-anchor">
+          <button id="channels-btn" aria-haspopup="true" aria-expanded="false"
+                  title="Choose which channels are shown, triggered on and exported" data-i18n-attr="title">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 3h3V1h4v2h7v2H8v2H4V5H1zm0 8h7V9h4v2h3v2h-3v2H8v-2H1z"/></svg>
+            <span data-i18n>Channels</span>
+          </button>
+          <div id="channels-pop" class="popover" hidden role="dialog" aria-label="Channels" data-i18n-attr="aria-label">
+            <div class="pop-grid" id="channels-grid"></div>
+            <div class="pop-actions">
+              <span data-i18n>Enable</span>
+              <button data-act="enable" data-sel="all" data-i18n>All</button>
+              <button data-act="enable" data-sel="changing" data-i18n>Changing</button>
+              <button data-act="enable" data-sel="steady" data-i18n>Non-changing</button>
+              <button data-act="enable" data-sel="named" data-i18n>Named</button>
+              <button data-act="enable" data-sel="unnamed" data-i18n>Unnamed</button>
+              <span data-i18n>Disable</span>
+              <button data-act="disable" data-sel="all" data-i18n>All</button>
+              <button data-act="disable" data-sel="changing" data-i18n>Changing</button>
+              <button data-act="disable" data-sel="steady" data-i18n>Non-changing</button>
+              <button data-act="disable" data-sel="named" data-i18n>Named</button>
+              <button data-act="disable" data-sel="unnamed" data-i18n>Unnamed</button>
+            </div>
+            <div class="pop-foot">
+              <p class="pop-note" data-i18n>Hidden channels are ignored by the trigger and left out of exports. All 8 are still captured. Drag a channel by its ⠿ grip to reorder.</p>
+              <button id="order-reset" title="Show the channels as CH0 … CH7 again" data-i18n data-i18n-attr="title">Reset order</button>
+            </div>
+          </div>
+        </div>
+        <button id="decoders-btn" aria-pressed="false" aria-controls="dec-dock"
+                title="Show the list of protocol decoders (UART, SPI, I²C, …) to add one" data-i18n-attr="title">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 4h4l1.5-2h3L11 4h4v2h-3.5L10 8H6L4.5 6H1zm0 6h3.5L6 8h4l1.5 2H15v2h-4l-1.5 2h-3L5 12H1z"/></svg>
+          <span data-i18n>Decoders</span>
+        </button>
+        <div class="popover-anchor">
+          <button id="help-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="help-menu" title="Help" data-i18n-attr="title">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 1.5a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11zM7.25 10.75h1.5v1.5h-1.5zM8 3.75A2.5 2.5 0 0 0 5.5 6.25H7a1 1 0 1 1 1.55.84c-.75.5-1.3 1.03-1.3 2.16v.25h1.5v-.2c0-.46.2-.7.75-1.07A2.5 2.5 0 0 0 8 3.75z"/></svg>
+            <span data-i18n>Help</span>
+          </button>
+          <!-- Help menu: the shortcut list now; customising shortcuts later. -->
+          <div id="help-menu" class="menu" role="menu" aria-label="Help" hidden data-i18n-attr="aria-label">
+            <button id="help-keys" role="menuitem" type="button"><span data-i18n>Keyboard shortcuts</span><kbd>?</kbd></button>
+            <div class="submenu" id="lang-sub">
+              <button id="lang-btn" role="menuitem" type="button" aria-haspopup="menu" aria-expanded="false"
+                      aria-controls="lang-menu"><span data-i18n>Language</span><span class="arrow" aria-hidden="true">▸</span></button>
+              <!-- Each language in its own words; app.js fills it from i18n.js. -->
+              <div id="lang-menu" class="menu sub" role="menu" aria-label="Language" data-i18n-attr="aria-label" hidden></div>
+            </div>
+            <div class="menu-sep" role="separator"></div>
+            <button id="help-about" role="menuitem" type="button" data-i18n>About WebPulse</button>
+          </div>
+        </div>
+        </div>
       </div>
-    </div>
-
-    <div class="group">
-      <button id="decoders-btn" aria-pressed="false" aria-controls="dec-dock"
-              title="Show the list of protocol decoders (UART, SPI, I²C, …) to add one">
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 4h4l1.5-2h3L11 4h4v2h-3.5L10 8H6L4.5 6H1zm0 6h3.5L6 8h4l1.5 2H15v2h-4l-1.5 2h-3L5 12H1z"/></svg>
-        Decoders <span id="decoders-count" class="count"></span>
-      </button>
-    </div>
-
-    <div class="group">
-      <label class="field">
-        <span>Rate</span>
-        <select id="rate"></select>
-      </label>
-      <label class="field">
-        <span>Samples</span>
-        <span class="combo" id="samples-box">
-          <input id="samples" value="10M" spellcheck="false" autocomplete="off"
-                 title="Number of samples, e.g. 500k, 2.5M, 30M">
-          <select id="sample-presets" title="Sample count presets"
-                  aria-label="Sample count presets"></select>
-        </span>
-      </label>
-      <span class="hint" id="duration"></span>
-      <label class="field">
-        <span>Pre-trigger</span>
-        <input id="pre" type="number" min="0" max="100" step="5" value="10">
-        <span class="unit">%</span>
-      </label>
-      <label class="field">
-        <span>Timeout</span>
-        <input id="timeout" type="number" min="0" step="1" value="0" title="Trigger wait timeout in seconds, 0 = wait forever">
-        <span class="unit">s</span>
-      </label>
-    </div>
-
-    <div class="group">
-      <button id="run" class="primary" data-mode="run" title="Start capture (R)">
-        <span class="when-run"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>Run</span>
-        <span class="when-stop"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1"/></svg>Stop</span>
-      </button>
-    </div>
-
-    <div class="group zoom" role="group" aria-label="Zoom">
-      <button id="zoom-in" class="icon" title="Zoom in (+, double-click)" aria-label="Zoom in">
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 1a5.5 5.5 0 0 1 4.38 8.82l3.65 3.65-1.06 1.06-3.65-3.65A5.5 5.5 0 1 1 6.5 1zm0 1.5a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM5.75 4h1.5v1.75H9v1.5H7.25V9h-1.5V7.25H4v-1.5h1.75z"/></svg>
-      </button>
-      <button id="zoom-out" class="icon" title="Zoom out (-, right double-click)" aria-label="Zoom out">
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 1a5.5 5.5 0 0 1 4.38 8.82l3.65 3.65-1.06 1.06-3.65-3.65A5.5 5.5 0 1 1 6.5 1zm0 1.5a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM4 5.75h5v1.5H4z"/></svg>
-      </button>
-      <button id="zoom-fit" title="Show the whole capture (F)">Fit</button>
-      <button id="zoom-ab" title="Zoom to the span between cursors A and B (Z)">A↔B</button>
-      <button id="zoom-back" title="Back to the previous view (Backspace)">
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3 1.5 7.5 6 12V9h3.5a3 3 0 0 1 0 6H8v1.5h1.5a4.5 4.5 0 0 0 0-9H6z" transform="translate(0 -1.5)"/></svg>Back
-      </button>
-    </div>
-
-    <div class="status">
-      <span id="state" class="pill" data-state="offline">offline</span>
-      <div class="progress" id="progress-wrap" hidden><div id="progress"></div></div>
-      <span id="state-detail" class="hint"></span>
-    </div>
-
-    <div class="group right">
-      <button id="open" title="Open a sigrok / PulseView session file (.sr)">
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 3h5l1.5 1.5h6.5v9h-13zM3 6v6h10V6z"/></svg>Open
-      </button>
-      <input id="open-file" type="file" accept=".sr" hidden>
-      <a id="export-sr" class="button disabled" download title="Save as a sigrok session file (.sr), opens in PulseView">Save .sr</a>
-      <a id="export-vcd" class="button disabled" download>VCD</a>
-      <a id="export-csv" class="button disabled" download>CSV</a>
-      <button id="export-png" title="Save the current view as a PNG image" disabled>PNG</button>
-      <span id="device" class="hint device"></span>
-      <button id="theme" title="Theme: follow the system" aria-label="Theme">
+      <div class="tb-right">
+      <div class="status">
+        <span id="state" class="pill" data-state="offline"></span>
+        <div class="progress" id="progress-wrap" hidden><div id="progress"></div></div>
+        <span id="state-detail" class="hint"></span>
+      </div>
+      <span id="device" class="device" data-state=""></span>
+      <button id="theme" title="Theme: follow the system" aria-label="Theme" data-i18n-attr="title,aria-label">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 1.5v11a5.5 5.5 0 0 1 0-11z"/></svg>
         <span id="theme-label">Auto</span>
       </button>
+      </div>
+    </div>
+
+    <div class="tb-row">
+      <div class="tb-left">
+        <div class="group">
+          <label class="field">
+            <span data-i18n>Rate</span>
+            <select id="rate"></select>
+          </label>
+          <label class="field">
+            <span data-i18n>Samples</span>
+            <span class="combo" id="samples-box">
+              <input id="samples" value="10M" spellcheck="false" autocomplete="off"
+                     title="Number of samples, e.g. 500k, 2.5M, 30M" data-i18n-attr="title">
+              <select id="sample-presets" title="Sample count presets"
+                      aria-label="Sample count presets" data-i18n-attr="title,aria-label"></select>
+            </span>
+          </label>
+          <span class="hint" id="duration"></span>
+          <label class="field">
+            <span data-i18n>Pre-trigger</span>
+            <input id="pre" type="number" min="0" max="100" step="5" value="10">
+            <span class="unit">%</span>
+          </label>
+          <label class="field">
+            <span data-i18n>Timeout</span>
+            <input id="timeout" type="number" min="0" step="1" value="0" title="Trigger wait timeout in seconds, 0 = wait forever" data-i18n-attr="title">
+            <span class="unit">s</span>
+          </label>
+        </div>
+      </div>
+      <div class="tb-right">
+        <div class="group view" role="group" aria-label="Capture and view" data-i18n-attr="aria-label">
+          <button id="run" class="primary" data-mode="run" title="Start capture (R)" data-i18n-attr="title">
+            <span class="when-run"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg><span data-i18n>Run</span></span>
+            <span class="when-stop"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1"/></svg><span data-i18n>Stop</span></span>
+          </button>
+          <button id="zoom-in" class="icon" title="Zoom in (+, double-click)" aria-label="Zoom in" data-i18n-attr="title,aria-label">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 1a5.5 5.5 0 0 1 4.38 8.82l3.65 3.65-1.06 1.06-3.65-3.65A5.5 5.5 0 1 1 6.5 1zm0 1.5a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM5.75 4h1.5v1.75H9v1.5H7.25V9h-1.5V7.25H4v-1.5h1.75z"/></svg>
+          </button>
+          <button id="zoom-out" class="icon" title="Zoom out (-, right double-click)" aria-label="Zoom out" data-i18n-attr="title,aria-label">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 1a5.5 5.5 0 0 1 4.38 8.82l3.65 3.65-1.06 1.06-3.65-3.65A5.5 5.5 0 1 1 6.5 1zm0 1.5a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM4 5.75h5v1.5H4z"/></svg>
+          </button>
+          <button id="zoom-fit" title="Show the whole capture (F)" data-i18n data-i18n-attr="title">Fit</button>
+            <button id="edge-prev" class="icon" title="Cursor A to the previous edge of the highlighted channel ([; Shift: cursor B)" aria-label="Cursor to previous edge" data-i18n-attr="title,aria-label">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3h1.5v10H2.5zM13 3v10L5.5 8z"/></svg>
+            </button>
+            <button id="edge-next" class="icon" title="Cursor A to the next edge of the highlighted channel (]; Shift: cursor B)" aria-label="Cursor to next edge" data-i18n-attr="title,aria-label">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12 3h1.5v10H12zM3 3v10l7.5-5z"/></svg>
+            </button>
+          <button id="zoom-ab" title="Zoom to the span between cursors A and B (Z)" data-i18n-attr="title">A↔B</button>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -139,8 +180,8 @@
   <main class="workspace">
     <aside class="channels" id="channels">
       <div class="channels-head">
-        <span>Channel</span>
-        <span title="Trigger condition">Trig</span>
+        <span data-i18n>Channel</span>
+        <span title="Trigger condition" data-i18n data-i18n-attr="title">Trig</span>
       </div>
       <div id="ch-rows"></div>
       <div id="dec-labels"></div>
@@ -148,46 +189,59 @@
     <section class="wave" id="wave-wrap">
       <canvas id="wave"></canvas>
       <div id="empty" class="empty">
-        <p class="big">No capture yet</p>
-        <p>Set the trigger per channel, then press <kbd>Run</kbd>.</p>
+        <p class="big" data-i18n>No capture yet</p>
+        <p><span data-i18n>Set the trigger per channel, then press</span> <kbd data-i18n>Run</kbd></p>
       </div>
     </section>
   </main>
 
-  <aside id="dec-dock" class="dock" hidden aria-label="Add a protocol decoder">
+  <aside id="dec-dock" class="dock" hidden aria-label="Add a protocol decoder" data-i18n-attr="aria-label">
     <div class="dock-head">
-      <span>Add decoder</span>
-      <button id="dock-close" class="mini" title="Close (Esc)" aria-label="Close">✕</button>
+      <span data-i18n>Add decoder</span>
+      <button id="dock-close" class="mini" title="Close (Esc)" aria-label="Close" data-i18n-attr="title,aria-label">✕</button>
     </div>
     <input id="dec-search" type="search" placeholder="Search decoders" autocomplete="off"
-           spellcheck="false" aria-label="Search decoders" aria-controls="dec-catalog">
-    <div id="dec-catalog" class="dec-catalog" role="listbox" aria-label="Decoders"></div>
-    <div id="dec-info" class="dec-info"></div>
+           spellcheck="false" aria-label="Search decoders" aria-controls="dec-catalog" data-i18n-attr="aria-label,placeholder">
+    <div id="dec-catalog" class="dec-catalog" role="listbox" aria-label="Decoders" data-i18n-attr="aria-label"></div>
+    <div id="dec-info" class="dec-info" data-empty="Select a decoder to see what it needs. Double-click or press Enter to add it." data-i18n-attr="data-empty"></div>
     <div class="dock-foot">
       <p class="pop-note" id="dec-note"></p>
-      <button id="dec-reload" title="Load your decoders from the decoders folder again">Reload</button>
+      <button id="dec-reload" title="Load your decoders from the decoders folder again" data-i18n data-i18n-attr="title">Reload</button>
     </div>
   </aside>
   </div>
 
-  <div id="dec-pop" class="dec-pop" hidden role="dialog" aria-label="Decoder settings"></div>
+  <div id="dec-pop" class="dec-pop" hidden role="dialog" aria-label="Decoder settings" data-i18n-attr="aria-label"></div>
 
   <footer class="statusbar">
     <span><i class="sw a"></i>A <b id="cur-a">–</b></span>
     <span><i class="sw b"></i>B <b id="cur-b">–</b></span>
     <span>Δt <b id="cur-dt">–</b></span>
     <span>1/Δt <b id="cur-f">–</b></span>
-    <span>Mouse <b id="cur-m">–</b></span>
-    <span class="edge-nav" title="Move cursor A to the previous / next edge of the highlighted channel ([ / ], Shift: cursor B)">
-      Edge
-      <button id="edge-prev" class="mini" aria-label="Cursor A to previous edge">◀</button>
-      <button id="edge-next" class="mini" aria-label="Cursor A to next edge">▶</button>
-    </span>
+    <span><span data-i18n>Mouse</span> <b id="cur-m">–</b></span>
     <span id="measure" class="measure" hidden></span>
     <span class="spacer"></span>
     <span id="view-info" class="hint"></span>
-    <span class="hint keys">double-click zoom in · right double-click zoom out (Ctrl ×8) · drag pan · shift+click A · shift+right-click B (Alt: no snap) · [ ] edge · Z A↔B · Backspace back · F fit · T trigger · Esc clear</span>
   </footer>
+
+  <dialog id="keys-dialog" class="dialog" aria-labelledby="keys-title">
+    <div class="dialog-head">
+      <h2 id="keys-title" data-i18n>Keyboard shortcuts</h2>
+      <button type="button" class="close mini" aria-label="Close" data-i18n-attr="aria-label">✕</button>
+    </div>
+    <div id="keys-list" class="keys-list"></div>
+  </dialog>
+
+  <dialog id="about-dialog" class="dialog about" aria-labelledby="about-title">
+    <div class="dialog-head">
+      <h2 id="about-title">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 12h3V4h4v8h3V4h4"/></svg>
+        WebPulse <span id="about-version"></span>
+      </h2>
+      <button type="button" class="close mini" aria-label="Close" data-i18n-attr="aria-label">✕</button>
+    </div>
+    <dl id="about-list" class="about-list"></dl>
+  </dialog>
 
   <div id="toast" class="toast" hidden></div>
 

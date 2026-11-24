@@ -82,7 +82,8 @@ add_custom_command(
 # --- executable ---------------------------------------------------------------
 add_executable(webpulse src/main.c src/server.c ${WP_WEB_ASSETS_C})
 target_compile_options(webpulse PRIVATE ${WP_WARNINGS})
-target_compile_definitions(webpulse PRIVATE WP_VERSION="${PROJECT_VERSION}")
+string(TIMESTAMP WP_BUILD_DATE "%Y-%m-%d" UTC)     # shown in Help ▸ About
+target_compile_definitions(webpulse PRIVATE WP_VERSION="${PROJECT_VERSION}" WP_BUILD_DATE="${WP_BUILD_DATE}")
 target_link_libraries(webpulse PRIVATE wpcore civetweb)
 if(WIN32)
     target_link_libraries(webpulse PRIVATE shell32 user32)  # ShellExecute; MessageBox when double-clicked

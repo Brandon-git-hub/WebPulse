@@ -574,3 +574,9 @@ wp_device *wp_fx2_new(const char *firmware_path)
     d->priv = p;
     return d;
 }
+
+void wp_fx2_libusb_version(char *buf, size_t n)
+{
+    const struct libusb_version *v = libusb_get_version();
+    snprintf(buf, n, "%u.%u.%u", v->major, v->minor, v->micro);
+}

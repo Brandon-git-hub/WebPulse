@@ -112,6 +112,11 @@ const document = {
 document.getElementById('samples').value = '2M';
 document.getElementById('channels-pop').hidden = true;
 document.getElementById('dec-dock').hidden = true;
+document.getElementById('file-menu').hidden = true;
+document.getElementById('export-menu').hidden = true;
+document.getElementById('help-menu').hidden = true;
+document.getElementById('keys-dialog').hidden = true;
+document.getElementById('about-dialog').hidden = true;
 document.getElementById('dec-pop').hidden = true;
 document.getElementById('pre').value = '25';
 document.getElementById('timeout').value = '5';
@@ -166,7 +171,7 @@ await import(pathToFileURL(path.join(here, '../web/js/app.js')).href);
 await waitFor(() => $('rate').children.length > 0, 3000, 'device info');
 check($('rate').children.length === 16, 'rate list populated from /api/device');
 $('rate').value = '24000000';
-check($('device').textContent.includes('simulator'), 'device label shows backend model');
+check($('device').textContent === 'Simulator' && $('device').dataset.state === 'sim', `connection label for the simulator (${$('device').textContent})`);
 check($('duration').textContent.includes('83.3 ms'), `duration label (${$('duration').textContent})`);
 {
   const presets = $('sample-presets');
@@ -198,6 +203,68 @@ check($('state-detail').textContent.startsWith('2M @ 24 MHz'), `status detail ($
 check(!$('export-vcd').classList.contains('disabled'), 'export enabled');
 check($('export-vcd').href.startsWith('api/export?fmt=vcd&names=CH0%2CCH1'), `export href (${$('export-vcd').href})`);
 
+// File menu: Open, Save session and the exports.
+{
+  $('file-btn').dispatch('click', { detail: 1 });
+  check(!$('file-menu').hidden && $('file-btn')['aria-expanded'] === 'true', 'File menu opens');
+  check(!$('export-sr').classList.contains('disabled') && !$('export-png').disabled, 'Save and export enabled with a capture');
+  check($('export-sr').href.startsWith('api/export?fmt=sr&'), `Save session href (${$('export-sr').href})`);
+  check(!$('export-btn').disabled && $('export-menu').hidden, 'Export enabled, its submenu closed');
+  $('export-sub').dispatch('pointerenter');
+  check(!$('export-menu').hidden && $('export-btn')['aria-expanded'] === 'true', 'hovering Export opens the submenu');
+  check($('export-vcd').title === '', 'no channel note while all channels are shown');
+  for (const fn of document.handlers.keydown) fn({ key: 'Escape', target: document.body, preventDefault() {} });
+  check($('file-menu').hidden && $('export-menu').hidden && $('file-btn')['aria-expanded'] === 'false',
+    'Esc closes the File menu and its submenu');
+  for (const fn of document.handlers.keydown) fn({ key: 's', ctrlKey: true, target: document.body, preventDefault() {} });
+  check(document.lastClicked === $('export-sr'), 'Ctrl+S saves the session');
+}
+
+// Help ▸ Keyboard shortcuts: the list, opened from the menu or with "?".
+{
+  $('help-btn').dispatch('click', { detail: 1 });
+  check(!$('help-menu').hidden, 'Help menu opens');
+  $('help-keys').dispatch('click');
+  check(!$('keys-dialog').hidden && $('help-menu').hidden, 'shortcut list opens, menu closed');
+  const groups = $('keys-list').children.map((sec) => sec.children[0].textContent).join(',');
+  check(groups === 'Capture,View,Cursors,File,Help', `shortcut groups (${groups})`);
+  const spanBefore = $('view-info').textContent;
+  for (const fn of document.handlers.keydown) fn({ key: 'f', target: document.body, preventDefault() {} });
+  check($('view-info').textContent === spanBefore, 'keys do not reach the view while the list is open');
+  $('keys-dialog').querySelector('.close').dispatch('click');
+  check($('keys-dialog').hidden, 'shortcut list closes');
+  for (const fn of document.handlers.keydown) fn({ key: '?', target: document.body, preventDefault() {} });
+  check(!$('keys-dialog').hidden, '"?" opens the shortcut list');
+  $('keys-dialog').querySelector('.close').dispatch('click');
+
+  // Help ▸ About: version, build date, OS, dependencies, …
+  $('help-about').dispatch('click');
+  await waitFor(() => !$('about-dialog').hidden, 3000, 'About');
+  const about = $('about-list').children.map((e) => e.textContent || e.children.map((c) => c.textContent).join('+'));
+  const field = (k) => about[about.indexOf(k) + 1];
+  check(/^\d+\.\d+\.\d+$/.test(field('Version')) && /^\d{4}-\d{2}-\d{2}$/.test(field('Build date')) &&
+    field('OS').length > 2 && field('Device') === 'Simulator' && field('License') === 'MIT' &&
+    /CivetWeb 1\.\d+/.test(field('Dependencies')) && field('Developer') === 'Brandon-git-hub',
+    `About lists the facts (${about.join(' | ')})`);
+  $('about-dialog').querySelector('.close').dispatch('click');
+  check($('about-dialog').hidden, 'About closes');
+}
+
+// Help ▸ Language ▸ 繁體中文 and back: the text the code writes follows at once.
+{
+  const langs = $('lang-menu').children.map((b) => `${b.dataset.lang}=${b.textContent}`).join(',');
+  check(langs === 'en=English,zh-TW=繁體中文', `languages listed (${langs})`);
+  check($('lang-menu').children[0]['aria-checked'] === 'true', 'English ticked by default (Node reports en-US)');
+  $('lang-menu').children[1].dispatch('click');
+  check(store['webpulse.lang'] === 'zh-TW' && document.documentElement.lang === 'zh-TW', 'language saved');
+  check($('state').textContent === '完成' && $('device').textContent === '模擬器' && $('theme-label').textContent === '自動',
+    `status, device and theme in Chinese (${$('state').textContent}, ${$('device').textContent}, ${$('theme-label').textContent})`);
+  check($('run').title === '開始擷取（R）', `Run tooltip in Chinese (${$('run').title})`);
+  check($('keys-list').children[0].children[0].textContent === '擷取', 'shortcut list in Chinese');
+  $('lang-menu').children[0].dispatch('click');
+  check($('state').textContent === 'done' && $('device').textContent === 'Simulator', 'back to English');
+}
+
 // Channel picker: hide CH2, bulk enable/disable, export only what is shown.
 {
   const rows = $('ch-rows').children;
@@ -214,10 +281,11 @@ check($('export-vcd').href.startsWith('api/export?fmt=vcd&names=CH0%2CCH1'), `ex
   check(!btn('enable', 'changing').disabled, 'changing filter available after a capture');
   const h0 = $('wave').height;
   pick(2, false);
-  check(rows[2].hidden && $('wave').height < h0 && $('channels-count').textContent === '7/8',
-        `CH2 hidden (${h0} -> ${$('wave').height}, ${$('channels-count').textContent})`);
+  check(rows[2].hidden && $('wave').height < h0, `CH2 hidden (${h0} -> ${$('wave').height})`);
   const href = $('export-csv').href;
   check(href.endsWith('&channels=0,1,3,4,5,6,7'), `export limited to enabled channels (${href})`);
+  check($('export-csv').title === 'Only the shown channels: CH0, CH1, CH3, CH4, CH5, CH6, CH7',
+    `tooltip says which channels (${$('export-csv').title})`);
   const csv = await (await fetch(new URL(href, base) + '&changes=1')).text();
   check(csv.startsWith('sample,time_ns,CH0,CH1,CH3,CH4,CH5,CH6,CH7\n'), `server CSV columns (${csv.split('\n')[0]})`);
   const vcd = await (await fetch(new URL($('export-vcd').href, base))).text();
@@ -296,9 +364,8 @@ $('wave').dispatch('pointerup', { clientX: 350, clientY: 100 });
 const a1 = $('cur-a').textContent;
 check(a1 !== '–', `cursor A dragged (${a1})`);
 
-// Double-click zoom: left in x2, right out x2, Ctrl x8; Back undoes each step
+// Double-click zoom: left in x2, right out x2, Ctrl x8
 await sleep(DBL_WAIT);
-check($('zoom-back').disabled === false, 'back enabled after fit');
 const s1 = viewSpan();
 click(600); click(600);
 check(near(viewSpan(), s1 / 2), `left double-click zooms in x2 (${s1} -> ${viewSpan()})`);
@@ -311,13 +378,10 @@ check(near(viewSpan(), s1 / 8), `right double-click zooms out x2 (${viewSpan()})
 await sleep(DBL_WAIT);
 click(600); await sleep(DBL_WAIT); click(600);
 check(near(viewSpan(), s1 / 8), 'two slow clicks do not zoom');
-$('zoom-back').dispatch('click');
-check(near(viewSpan(), s1 / 16), `back (${viewSpan()})`);
-$('zoom-back').dispatch('click');
-$('zoom-back').dispatch('click');
-check(near(viewSpan(), s1), `back to the start (${viewSpan()})`);
 
-// Toolbar zoom buttons
+// Toolbar zoom buttons (from the whole capture)
+$('zoom-fit').dispatch('click');
+check(near(viewSpan(), s1), 'fit button');
 $('zoom-in').dispatch('click');
 check(near(viewSpan(), s1 / 2), 'zoom-in button');
 $('zoom-out').dispatch('click');
@@ -414,7 +478,6 @@ check($('run').dataset.mode === 'run' && !$('run').disabled, 'Run button back to
     10000, 'UART decode');
   check($('dec-labels').children.map((e) => e.querySelector('.txt').textContent).join('|') === 'UART · Data|UART · Errors',
     'decoder rows listed');
-  check($('decoders-count').textContent === '1', 'decoder count on the button');
   check(!$('dec-dock').hidden, 'decoder list stays open after adding');
   // Hover the data row (below 8 channel rows) where the line sends its message
   // (x = 560 is sample ~233k, inside a burst): a hex byte + ASCII.
@@ -440,7 +503,7 @@ check($('run').dataset.mode === 'run' && !$('run').disabled, 'Run button back to
   name.dispatch('change');
   check($('dec-labels').children[0].querySelector('.txt').textContent === 'Console · Data', 'renamed');
   pop.children.find((e) => e.className === 'btns').children.find((e) => e.className === 'del').dispatch('click');
-  check($('dec-labels').children.length === 0 && $('decoders-count').textContent === '' && pop.hidden,
+  check($('dec-labels').children.length === 0 && pop.hidden,
     'decoder removed');
   $('decoders-btn').dispatch('click');
   check($('dec-dock').hidden, 'decoder list closes');

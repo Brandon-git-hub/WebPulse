@@ -61,6 +61,8 @@ wp_device *wp_sim_new(double speed);
 
 #ifdef WP_HAVE_FX2
 wp_device *wp_fx2_new(const char *firmware_path);
+/* The libusb version in use, e.g. "1.0.30". */
+void wp_fx2_libusb_version(char *buf, size_t n);
 #endif
 
 static inline void wp_device_destroy(wp_device *d)

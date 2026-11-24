@@ -98,13 +98,28 @@ body {
 
 .toolbar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 18px;
+  flex-direction: column;
+  gap: 8px;
   padding: 8px 14px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
+
+/* Each row: a left and a right cluster; on a narrow window the right one
+ * wraps and stays right-aligned. */
+.tb-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+}
+.tb-left, .tb-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+}
+.tb-right { margin-left: auto; justify-content: flex-end; }
 
 .brand {
   display: flex;
@@ -128,7 +143,6 @@ body {
   gap: 10px;
   flex-wrap: wrap;
 }
-.group.right { margin-left: auto; }
 
 .field {
   display: flex;
@@ -188,7 +202,6 @@ button:disabled, .button.disabled { opacity: 0.4; cursor: default; pointer-event
 button svg { width: 14px; height: 14px; fill: currentColor; }
 button.icon { padding: 5px 8px; }
 button.icon svg { width: 15px; height: 15px; }
-.zoom { gap: 4px; }
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -203,14 +216,88 @@ button.primary:hover:not(:disabled) { filter: brightness(1.1); border-color: var
 #run[data-mode="stop"] .when-stop { display: inline-flex; align-items: center; gap: 6px; }
 #run .when-run { display: inline-flex; align-items: center; gap: 6px; }
 
+/* File, Channels, Decoders: one set of alike buttons; open = accent. */
+.group.menus { gap: 6px; }
+.menus > button, .menus > .popover-anchor > button { min-width: 96px; justify-content: center; }
+.menus button[aria-expanded="true"], .menus button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.group.view { gap: 4px; }
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  min-width: 200px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px var(--shadow);
+  display: flex;
+  flex-direction: column;
+}
+.menu a, .menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--text);
+  font: 13px var(--sans);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.menu kbd { color: var(--muted); font: 11px var(--mono); }
+.menu .arrow { color: var(--muted); font-size: 11px; }
+/* Help ▸ Language: the current one is ticked. */
+.menu [role="menuitemradio"]::after { content: ""; width: 1em; color: var(--accent); }
+.menu [role="menuitemradio"][aria-checked="true"]::after { content: "✓"; }
+.menu a:hover:not(.disabled), .menu button:hover:not(:disabled),
+.menu a:focus-visible, .menu button:focus-visible,
+.menu button[aria-expanded="true"] { background: var(--panel-2); outline: none; }
+.menu a.disabled { opacity: 0.4; cursor: default; pointer-events: none; }
+/* A submenu opens to the right of its item (Export ▸). */
+.submenu { position: relative; }
+.menu.sub { top: -5px; left: calc(100% + 4px); min-width: 150px; }
+.menu-sep { height: 1px; margin: 4px 6px; background: var(--border); }
 .hint { color: var(--muted); font-size: 12px; }
-.device { max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Connection status, always shown in row 1: a dot and the board (or why not). */
+.device {
+  max-width: 280px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-size: 12px;
+}
+.device::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 0;
+}
+.device[data-state="off"] { color: var(--warn); }
+.device[data-state="off"]::before { background: var(--warn); }
+.device[data-state=""]::before { background: var(--muted); }
 
 .status {
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 260px;
+  justify-content: flex-end;     /* next to the zoom buttons, which never move */
 }
 
 .pill {
@@ -458,7 +545,7 @@ button.primary:hover:not(:disabled) { filter: brightness(1.1); border-color: var
   overflow-y: auto;
   font-size: 12px;
 }
-.dec-info:empty::before { content: "Select a decoder to see what it needs. Double-click or press Enter to add it."; color: var(--muted); }
+.dec-info:empty::before { content: attr(data-empty); color: var(--muted); }
 .dec-info h4 { margin: 0 0 2px; font-size: 13px; }
 .dec-info p { margin: 0 0 6px; color: var(--muted); }
 .dec-info p.err { color: var(--danger); }
@@ -506,7 +593,6 @@ button.primary:hover:not(:disabled) { filter: brightness(1.1); border-color: var
   letter-spacing: 0.6px;
 }
 .dec-pop label { color: var(--text); }
-.dec-pop label small { display: block; color: var(--muted); font-size: 11px; }
 .dec-pop input, .dec-pop select { width: 100%; padding: 3px 6px; }
 .dec-pop .swatches { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .dec-pop .swatches button {
@@ -527,7 +613,6 @@ button.primary:hover:not(:disabled) { filter: brightness(1.1); border-color: var
 /* ---- channel picker ------------------------------------------------------- */
 
 .popover-anchor { position: relative; }
-.count { font: 500 11px var(--mono); color: var(--warn); }
 .popover {
   position: absolute;
   top: calc(100% + 6px);
@@ -623,7 +708,6 @@ kbd {
   margin-left: 4px;
 }
 .statusbar .spacer { flex: 1; }
-.edge-nav { display: inline-flex; align-items: center; gap: 3px; }
 button.mini { padding: 0 6px; font-size: 10px; line-height: 16px; }
 .measure { color: var(--text); font: 12px var(--mono); }
 .measure .ch-sw {
@@ -660,10 +744,71 @@ button.mini { padding: 0 6px; font-size: 10px; line-height: 16px; }
 .toast.info { background: var(--panel-2); border-color: var(--border); color: var(--text); }
 
 @media (max-width: 900px) {
-  .keys { display: none; }
   .channels { width: 170px; }
   .dock { flex-basis: 240px; }
-  .group.right { margin-left: 0; }
 }
 
-#decoders-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+
+/* ---- dialogs (Help ▸ Keyboard shortcuts) ----------------------------------- */
+
+.dialog {
+  width: min(840px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  padding: 16px 20px 20px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px var(--shadow);
+}
+.dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+.dialog-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.dialog-head h2 { margin: 0; font-size: 15px; }
+.keys-list { columns: 2 340px; column-gap: 32px; }
+.keys-list section { break-inside: avoid; margin-bottom: 16px; }
+.keys-list h3 {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+.key-row {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 12px;
+  align-items: baseline;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--row-line);
+  font-size: 13px;
+}
+.key-row .k { display: flex; flex-wrap: wrap; gap: 4px; }
+kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: 11px var(--mono);
+  white-space: nowrap;
+}
+.menu kbd { border: 0; background: none; padding: 0; color: var(--muted); }
+
+/* Help ▸ About */
+.dialog.about { width: min(520px, calc(100vw - 32px)); }
+.about h2 { display: flex; align-items: center; gap: 8px; }
+.about h2 svg { width: 20px; height: 20px; fill: none; stroke: var(--accent); stroke-width: 2; }
+.about h2 span { color: var(--muted); font-weight: 500; font-size: 13px; }
+.about-list {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 6px 16px;
+  margin: 0;
+  font-size: 13px;
+}
+.about-list dt { color: var(--muted); }
+.about-list dd { margin: 0; overflow-wrap: anywhere; }
+.about-list a { color: var(--accent); }

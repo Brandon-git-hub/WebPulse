@@ -31,6 +31,10 @@
 
 #include "civetweb.h"
 
+#ifndef WP_BUILD_DATE
+#define WP_BUILD_DATE ""
+#endif
+
 #include <dirent.h>
 #include <errno.h>
 #include <pthread.h>
@@ -181,18 +185,26 @@ static size_t status_json(wp_server *s, char *out, size_t len)
 static int api_device(struct mg_connection *conn, wp_server *s)
 {
     wp_device_info info;
-    char body[2048], model[160], fw[64];
+    char body[2048], model[160], fw[64], os[128], os_js[160], usb[32] = "";
     size_t n, i;
     wp_device *dev = wp_engine_device(s->engine);
 
     dev->ops->info(dev, &info);
     wp_json_escape(info.model, model, sizeof(model));
     wp_json_escape(info.firmware, fw, sizeof(fw));
+    wp_os_name(os, sizeof(os));
+    wp_json_escape(os, os_js, sizeof(os_js));
+#ifdef WP_HAVE_FX2
+    wp_fx2_libusb_version(usb, sizeof(usb));
+#endif
+    /* The model of a board that is not (yet) found says so; "connected"
+     * spares the UI from parsing it. */
     n = (size_t)snprintf(body, sizeof(body),
-        "{\"backend\":\"%s\",\"model\":\"%s\",\"firmware\":\"%s\",\"channels\":8,"
-        "\"version\":\"%s\",\"max_samples\":%llu,\"rates\":[",
-        info.backend, model, fw, s->version,
-        (unsigned long long)wp_engine_max_samples(s->engine));
+        "{\"backend\":\"%s\",\"model\":\"%s\",\"firmware\":\"%s\",\"connected\":%s,"
+        "\"channels\":8,\"version\":\"%s\",\"build\":\"%s\",\"os\":\"%s\","
+        "\"civetweb\":\"%s\",\"libusb\":\"%s\",\"max_samples\":%llu,\"rates\":[",
+        info.backend, model, fw, dev->is_open ? "true" : "false", s->version, WP_BUILD_DATE,
+        os_js, CIVETWEB_VERSION, usb, (unsigned long long)wp_engine_max_samples(s->engine));
     for (i = 0; i < info.nrates && n < sizeof(body) - 32; i++)
         n += (size_t)snprintf(body + n, sizeof(body) - n, "%s%llu", i ? "," : "",
                               (unsigned long long)info.rates[i]);

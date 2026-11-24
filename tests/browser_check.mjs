@@ -157,6 +157,145 @@ try {
   checkAlign(await js(ALIGN), 'dark theme');
   await shot('dark-zoomed.png');
 
+  // File menu: keyboard (↓ opens, arrows move, → opens Export, ← back, Esc closes);
+  // the Export submenu also opens on hover, to the right of its item.
+  const key = async (k, code = k, vk = 0) => {
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code, windowsVirtualKeyCode: vk });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, windowsVirtualKeyCode: vk });
+  };
+  await js(`document.getElementById('file-btn').focus()`);
+  await key('ArrowDown', 'ArrowDown', 40);
+  const menu = await js(`(() => { const m = document.getElementById('file-menu'), r = m.getBoundingClientRect();
+    return { hidden: m.hidden, box: [r.left, r.top, r.right, r.bottom, innerWidth], focus: document.activeElement.id }; })()`);
+  check(!menu.hidden && menu.box[0] >= 0 && menu.box[2] <= menu.box[4] && menu.focus === 'open',
+    `File menu opens with the keyboard (${JSON.stringify(menu)})`);
+  await key('ArrowDown', 'ArrowDown', 40);
+  await key('ArrowDown', 'ArrowDown', 40);
+  check(await js(`document.activeElement.id`) === 'export-btn', 'arrow keys move to Export');
+  await key('ArrowRight', 'ArrowRight', 39);
+  const sub = await js(`(() => { const e = document.getElementById('export-btn').getBoundingClientRect(),
+      m = document.getElementById('export-menu'), r = m.getBoundingClientRect();
+    return { hidden: m.hidden, right: r.left >= e.right, inside: r.right <= innerWidth, focus: document.activeElement.id,
+      items: [...m.querySelectorAll('[role="menuitem"]')].map((x) => x.textContent.trim()).join(',') }; })()`);
+  check(!sub.hidden && sub.right && sub.inside && sub.focus === 'export-vcd' && sub.items === 'VCD,CSV,PNG image',
+    `→ opens Export to the right (${JSON.stringify(sub)})`);
+  await shot('dark-file-menu.png');
+  await key('ArrowLeft', 'ArrowLeft', 37);
+  check(await js(`document.getElementById('export-menu').hidden && document.activeElement.id === 'export-btn'`),
+    '← closes the submenu, back on Export');
+  await key('Escape', 'Escape', 27);
+  check(await js(`document.getElementById('file-menu').hidden && document.activeElement.id === 'file-btn'`),
+    'Esc closes the File menu, focus back on the button');
+  // Hover: open File, move onto Export.
+  await js(`document.getElementById('file-btn').click()`);
+  const ex = await js(`(() => { const r = document.getElementById('export-btn').getBoundingClientRect(); return { x: r.left + 20, y: r.top + r.height / 2 }; })()`);
+  await mouse(ex.x, ex.y);
+  await sleep(100);
+  check(!(await js(`document.getElementById('export-menu').hidden`)), 'hovering Export opens the submenu');
+  await key('Escape', 'Escape', 27);
+  await key('Escape', 'Escape', 27);
+
+  // Toolbar: status on the first row at the right; the second row ends with
+  // Run, zoom in, zoom out, … in that order, right-aligned; the three menu
+  // buttons look alike.
+  const tb = await js(`(() => {
+    const r = (id) => document.getElementById(id).getBoundingClientRect();
+    const row = (e) => Math.round(e.top + e.height / 2);
+    const tbr = document.querySelector('.toolbar').getBoundingClientRect();
+    const order = ['run', 'zoom-in', 'zoom-out', 'zoom-fit', 'edge-prev', 'edge-next', 'zoom-ab'].map((id) => r(id).left);
+    const btns = ['file-btn', 'channels-btn', 'decoders-btn', 'help-btn'].map((id) => getComputedStyle(document.getElementById(id)));
+    return {
+      statusRow1: Math.abs(row(r('state')) - row(r('file-btn'))) < 12 && row(r('run')) > row(r('state')) + 12,
+      statusRight: r('state-detail').right > tbr.right - 400,
+      order: order.every((x, i) => i === 0 || x > order[i - 1]),
+      viewRight: r('zoom-ab').right > tbr.right - 30,
+      noEdgeInStatusBar: !document.querySelector('.statusbar #edge-prev') && !document.querySelector('.statusbar #theme'),
+      noBack: !document.getElementById('zoom-back'),
+      deviceRow1: Math.abs(row(r('device')) - row(r('file-btn'))) < 12 &&
+        document.getElementById('device').textContent === 'Simulator',
+      themeLast: Math.abs(row(r('theme')) - row(r('file-btn'))) < 12 && r('theme').right > tbr.right - 30 &&
+        r('theme').left > r('device').right,
+      alike: btns.every((c) => c.height === btns[0].height && c.borderColor === btns[0].borderColor &&
+        c.fontWeight === btns[0].fontWeight && c.minWidth === btns[0].minWidth),
+    };
+  })()`);
+  check(Object.values(tb).every(Boolean), `toolbar layout (${JSON.stringify(tb)})`);
+  await shot('toolbar.png');
+
+  // Help ▸ Keyboard shortcuts: a modal list; Esc closes it, "?" opens it.
+  await js(`document.getElementById('help-btn').click()`);
+  await sleep(100);
+  check(!(await js(`document.getElementById('help-menu').hidden`)), 'Help menu opens');
+  await js(`document.getElementById('help-keys').click()`);
+  await sleep(150);
+  const dlg = await js(`(() => { const d = document.getElementById('keys-dialog'), r = d.getBoundingClientRect();
+    return { open: d.open, inside: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
+      groups: [...d.querySelectorAll('h3')].map((h) => h.textContent).join(','), rows: d.querySelectorAll('.key-row').length }; })()`);
+  check(dlg.open && dlg.inside && dlg.groups === 'Capture,View,Cursors,File,Help' && dlg.rows >= 18,
+    `shortcut list (${JSON.stringify(dlg)})`);
+  await shot('dark-shortcuts.png');
+  await key('Escape', 'Escape', 27);
+  await sleep(100);
+  check(!(await js(`document.getElementById('keys-dialog').open`)), 'Esc closes the shortcut list');
+  await js(`document.body.focus()`);
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: '?', code: 'Slash', text: '?', modifiers: 8, windowsVirtualKeyCode: 191 });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: '?', code: 'Slash', modifiers: 8, windowsVirtualKeyCode: 191 });
+  await sleep(100);
+  check(await js(`document.getElementById('keys-dialog').open`), '"?" opens the shortcut list');
+  await key('Escape', 'Escape', 27);
+  check(!(await js(`document.querySelector('.statusbar .keys')`)), 'no shortcut hint line in the status bar');
+
+  // Help ▸ About
+  await js(`document.getElementById('help-btn').click()`);
+  await js(`document.getElementById('help-about').click()`);
+  await waitFor(`document.getElementById('about-dialog').open && document.getElementById('about-list').children.length > 0`, 3000, 'About');
+  const about = await js(`(() => { const d = document.getElementById('about-dialog'), r = d.getBoundingClientRect();
+    return { inside: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
+      keys: [...d.querySelectorAll('dt')].map((e) => e.textContent).join(','),
+      link: d.querySelector('a') && d.querySelector('a').href, browser: [...d.querySelectorAll('dt')].find((e) => e.textContent === 'Browser').nextElementSibling.textContent }; })()`);
+  check(about.inside && about.keys === 'Version,Build date,OS,Browser,Device,Dependencies,Developer,GitHub,License' &&
+    about.link === 'https://github.com/Brandon-git-hub/WebPulse' && /^Chrome \d+/.test(about.browser), `About (${JSON.stringify(about)})`);
+  await shot('dark-about.png');
+  await key('Escape', 'Escape', 27);
+  check(!(await js(`document.getElementById('about-dialog').open`)), 'Esc closes About');
+
+  // Help ▸ Language ▸ 繁體中文: the whole page switches at once (no reload).
+  await js(`document.getElementById('help-btn').click()`);
+  const lb = await js(`(() => { const r = document.getElementById('lang-btn').getBoundingClientRect(); return { x: r.left + 20, y: r.top + r.height / 2 }; })()`);
+  await mouse(lb.x, lb.y);
+  await sleep(100);
+  check(!(await js(`document.getElementById('lang-menu').hidden`)), 'hovering Language opens its submenu');
+  await js(`document.querySelector('#lang-menu [data-lang="zh-TW"]').click()`);
+  await sleep(150);
+  const zh = await js(`(() => ({
+    lang: document.documentElement.lang,
+    file: document.querySelector('#file-btn [data-i18n]').textContent,
+    run: document.querySelector('#run .when-run [data-i18n]').textContent,
+    rate: document.querySelector('.field [data-i18n]').textContent,
+    state: document.getElementById('state').textContent,
+    device: document.getElementById('device').textContent,
+    fitTitle: document.getElementById('zoom-fit').title,
+    menuClosed: document.getElementById('help-menu').hidden,
+  }))()`);
+  check(zh.lang === 'zh-TW' && zh.file === '檔案' && zh.run === '執行' && zh.rate === '取樣率' && zh.state === '完成' &&
+    zh.device === '模擬器' && zh.fitTitle === '顯示完整擷取資料（F）' && zh.menuClosed, `page in Chinese (${JSON.stringify(zh)})`);
+  await js(`document.getElementById('help-btn').click()`);
+  await mouse(lb.x, lb.y);
+  await sleep(100);
+  await shot('zh-help-language.png');
+  await key('Escape', 'Escape', 27);
+  await js(`document.querySelector('#dec-labels .dec-label').click()`);
+  await sleep(150);
+  await shot('zh-decoder-settings.png');
+  await key('Escape', 'Escape', 27);
+  // Reloading keeps the language.
+  await send('Page.reload');
+  await waitFor(`document.getElementById('state').dataset.state === 'done'`, 10000, 'reload');
+  check(await js(`document.querySelector('#file-btn [data-i18n]').textContent`) === '檔案', 'language kept after a reload');
+  checkAlign(await js(ALIGN), 'Chinese UI');
+  await js(`(() => { document.getElementById('help-btn').click(); document.querySelector('#lang-menu [data-lang="en"]').click(); })()`);
+  check(await js(`document.querySelector('#file-btn [data-i18n]').textContent`) === 'File', 'back to English');
+
   // Decoder settings open beside the label, inside the window; a change
   // applies at once.
   await js(`document.querySelector('#dec-labels .dec-label').click()`);

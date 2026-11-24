@@ -120,13 +120,13 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="04b4", ATTR{idProduct}=="8613", MODE="0666"
 | 平移 | 左鍵拖曳，或 Shift + 滾輪 |
 | 顯示完整擷取 | `F` |
 | 放大至游標 A–B 區間 | `Z` |
-| 返回上一個檢視 | `Backspace` |
 | 放置游標 A / B | Shift + 左鍵 / Shift + 右鍵；按住不放可拖曳 |
 | 游標 A 移至上一個 / 下一個邊緣 | `[` / `]`（游標 B 為 `{` / `}`） |
 | 跳至觸發點 | `T` |
 | 開始 / 停止 / 清除游標 | `R` / `S` / `Esc` |
+| 列出所有快捷鍵 | `?`，或 **Help** ▸ **Keyboard shortcuts** |
 
-工具列也提供相同功能的放大、縮小、Fit、A↔B 與 Back 按鈕。
+工具列第二列右側、**Run** 之後也提供放大、縮小、Fit、上一個 / 下一個邊緣與 A↔B 按鈕。第一列會固定顯示裝置是否已連接，最右側為主題切換（Auto / Light / Dark）。**Help** ▸ **About WebPulse** 可查看版本、建置日期、作業系統、相依套件與授權。**Help** ▸ **Language** 可切換英文與繁體中文介面，首次開啟時依瀏覽器語言自動選擇；解碼器本身的名稱與選項維持英文。
 
 游標會自動吸附 8 px 範圍內的邊緣；放置時按住 Alt 可停用吸附。邊緣導覽以滑鼠所在、目前反白的通道為準。
 
@@ -148,11 +148,14 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="04b4", ATTR{idProduct}=="8613", MODE="0666"
 
 ### 檔案
 
-| 按鈕 | 功能 |
+工具列左側的 **File** 選單：
+
+| 項目 | 功能 |
 |---|---|
-| **Open**（或將檔案拖放至網頁） | 開啟 PulseView 或 sigrok-cli 儲存的工作階段檔，通道名稱沿用檔案設定；超過 8 個通道的檔案只載入前 8 個 |
-| **Save .sr** | 儲存為 PulseView 可開啟的工作階段檔，包含通道名稱，且只包含目前顯示的通道 |
-| **VCD** / **CSV** / **PNG** | 匯出擷取資料，或將目前畫面存成圖片 |
+| **Open…**（Ctrl+O，或將檔案拖放至網頁） | 開啟 PulseView 或 sigrok-cli 儲存的工作階段檔，通道名稱沿用檔案設定；超過 8 個通道的檔案只載入前 8 個 |
+| **Save session**（Ctrl+S） | 儲存為 PulseView 可開啟的工作階段檔（`.sr`），包含通道名稱，且只包含目前顯示的通道 |
+| **Export ▸ VCD / CSV** | 將擷取資料匯出為 VCD 或 CSV 檔，只包含目前顯示的通道 |
+| **Export ▸ PNG image** | 將目前畫面存成圖片，包含通道名稱與解碼標註 |
 
 ## 命令列
 
@@ -330,7 +333,7 @@ third_party/  CivetWeb 1.16（MIT）
 
 | 方法 | 路徑 | 說明 |
 |---|---|---|
-| GET | `/api/device` | 後端類型、型號、韌體、支援的取樣率、最大取樣點數 |
+| GET | `/api/device` | 後端類型、型號、韌體、`connected`（是否已連接）、支援的取樣率、最大取樣點數；版本、建置日期、作業系統、CivetWeb 與 libusb 版本（供 Help ▸ About 使用） |
 | POST | `/api/capture` | 開始擷取：`{"rate":24000000,"samples":10000000,"pre":0.1,"trigger":"XXXXXXXR","timeout_ms":0}` |
 | POST | `/api/stop` | 停止擷取；觸發後已擷取的資料會保留 |
 | GET | `/api/status` | 狀態（`idle` / `armed` / `capturing` / `processing` / `done` / `error`）與進度；`capture.changing` 為有訊號變化的通道遮罩 |

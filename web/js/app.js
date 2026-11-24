@@ -5,6 +5,7 @@
 import { formatFreq, formatRate, formatSI, formatTime, parseSI } from './format.js';
 import { CHANNELS, DEC_ROW_H, RULER_H, ROW_H, Renderer, loadTheme } from './renderer.js';
 import { Decoders, PALETTE } from './decoders.js';
+import { LANGUAGES, applyI18n, getLang, setLang, tr } from './i18n.js';
 import { Viewport } from './viewport.js';
 
 const $ = (id) => document.getElementById(id);
@@ -247,13 +248,14 @@ function updateMeasureReadout() {
   const t = (n) => (n == null ? '–' : formatTime(n / rate, 4));
   const head = `<span class="ch-sw" style="--c:${ch.color}"></span>${escapeHtml(ch.name)}`;
   if (m.p < 0 && m.n < 0) {
-    el.innerHTML = `${head}<span class="k">constant ${m.level ? 'high' : 'low'}</span>`;
+    el.innerHTML = `${head}<span class="k">${tr(m.level ? 'constant high' : 'constant low')}</span>`;
   } else {
     const v = measureValues(m);
     const f = v.period ? formatFreq(rate / v.period) : '–';
     const duty = v.period ? (100 * v.high / v.period).toFixed(1) + ' %' : '–';
-    el.innerHTML = `${head}<span class="k">High</span> ${t(v.high)}<span class="k">Low</span> ${t(v.low)}` +
-      `<span class="k">Period</span> ${t(v.period)}<span class="k">Freq</span> ${f}<span class="k">Duty</span> ${duty}`;
+    el.innerHTML = `${head}<span class="k">${tr('High')}</span> ${t(v.high)}<span class="k">${tr('Low')}</span> ${t(v.low)}` +
+      `<span class="k">${tr('Period')}</span> ${t(v.period)}<span class="k">${tr('Freq')}</span> ${f}` +
+      `<span class="k">${tr('Duty')}</span> ${duty}`;
   }
   el.hidden = false;
 }
@@ -292,13 +294,12 @@ async function stepEdge(k, dir) {
   // p is the edge at or before from; when the cursor sits on it, step past it.
   const to = dir > 0 ? m.n : m.p >= 0 && m.p < m.s ? m.p : m.pm;
   if (to < 0) {
-    toast(`No ${dir > 0 ? 'later' : 'earlier'} edge on ${channels[ch].name}`, 'info');
+    toast(tr(dir > 0 ? 'No later edge on {ch}' : 'No earlier edge on {ch}', { ch: channels[ch].name }), 'info');
     return;
   }
   renderer.cursors[k] = to;
   const x = vp.xOf(to);
   if (x < 0 || x > vp.width) {
-    vp.save();
     vp.centreOn(to);
   }
   renderer.requestDraw();
@@ -333,8 +334,8 @@ function applyTheme() {
   const t = themeChoice;
   document.documentElement.dataset.theme =
     t === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : t;
-  $('theme').title = THEME_TITLES[t] + ' (click to change)';
-  $('theme-label').textContent = t[0].toUpperCase() + t.slice(1);
+  $('theme').title = tr(THEME_TITLES[t]) + tr(' (click to change)');
+  $('theme-label').textContent = tr(t[0].toUpperCase() + t.slice(1));
   loadTheme();
   // Default channel colours differ per theme.
   channels.forEach((ch) => {
@@ -396,7 +397,8 @@ function buildChannelList() {
       const o = document.createElement('option');
       o.value = v;
       o.textContent = glyph;
-      o.title = title;
+      o.title = tr(title);
+      o.dataset.title = title;
       trig.appendChild(o);
     }
     trig.value = ch.trig;
@@ -444,7 +446,7 @@ function syncDecoders(structure = true) {
     el.style.setProperty('--c', r.color);
     el.innerHTML = '<span class="bar"></span><span class="txt"></span>';
     el.querySelector('.txt').textContent = r.label;
-    el.title = r.status || `${r.label} (click for settings)`;
+    el.title = r.status || tr('{name} (click for settings)', { name: r.label });
     const open = (ev) => {
       ev.preventDefault();
       showDecoderSettings(decPop.inst === r.inst && ev.type === 'click' ? null : r.inst, el);
@@ -453,7 +455,6 @@ function syncDecoders(structure = true) {
     el.addEventListener('contextmenu', open);
     box.appendChild(el);
   }
-  $('decoders-count').textContent = decoders.list.length ? String(decoders.list.length) : '';
   if (decPop.inst && !decoders.list.includes(decPop.inst)) showDecoderSettings(null);
   else if (decPop.inst) placeDecoderSettings();
 }
@@ -498,7 +499,7 @@ function buildDecoderDock() {
   });
   $('dec-reload').addEventListener('click', () => decoders.loadDefs().then(() => {
     renderDecoderCatalog();
-    toast(`Decoders reloaded (${decoders.defs.filter((d) => d.def).length} available)`, 'info');
+    toast(tr('Decoders reloaded ({n} available)', { n: decoders.defs.filter((d) => d.def).length }), 'info');
   }));
   showDecoderDock(settings.decoderDock === true, false);
 }
@@ -538,7 +539,7 @@ function renderDecoderCatalog() {
     if (!defs.length) continue;
     const g = document.createElement('div');
     g.className = 'dec-group';
-    g.textContent = source === 'built-in' ? 'Built-in' : 'Your decoders';
+    g.textContent = tr(source === 'built-in' ? 'Built-in' : 'Your decoders');
     list.appendChild(g);
     for (const d of defs) {
       const el = document.createElement('div');
@@ -546,11 +547,17 @@ function renderDecoderCatalog() {
       el.dataset.key = d.key;
       el.setAttribute('role', 'option');
       el.setAttribute('aria-selected', String(d.key === dock.sel));
-      el.title = d.def ? 'Double-click to add' : d.error;
-      el.innerHTML = '<span class="nm"></span><span class="id"></span><div class="d"></div>';
+      // The description is in the tooltip and in the info below the list.
+      el.title = d.def ? [d.def.desc, tr('Double-click to add')].filter(Boolean).join('\n') : d.error;
+      el.innerHTML = '<span class="nm"></span><span class="id"></span>';
       el.querySelector('.nm').textContent = d.name;
       el.querySelector('.id').textContent = d.key.replace(/^\w+:/, '');
-      el.querySelector('.d').textContent = d.def ? d.def.desc || '' : `cannot load: ${d.error}`;
+      if (!d.def) {
+        const why = document.createElement('div');
+        why.className = 'd';
+        why.textContent = tr('cannot load: {error}', { error: d.error });
+        el.appendChild(why);
+      }
       el.addEventListener('click', () => selectDecoderDef(d.key));
       el.addEventListener('dblclick', () => d.def && addDecoder(d.key));
       list.appendChild(el);
@@ -559,11 +566,11 @@ function renderDecoderCatalog() {
   if (!shown.length) {
     const none = document.createElement('div');
     none.className = 'none';
-    none.textContent = decoders.defs.length ? 'No decoder matches.' : 'Loading…';
+    none.textContent = tr(decoders.defs.length ? 'No decoder matches.' : 'Loading…');
     list.appendChild(none);
   }
   renderDecoderInfo();
-  $('dec-note').textContent = decoders.userDir ? `Your own decoders: ${decoders.userDir}` : '';
+  $('dec-note').textContent = decoders.userDir ? tr('Your own decoders: {dir}', { dir: decoders.userDir }) : '';
 }
 
 function selectDecoderDef(key) {
@@ -599,11 +606,11 @@ function renderDecoderInfo() {
   };
   add('h4', d.name);
   if (!d.def) {
-    add('p', `This decoder cannot be loaded: ${d.error}`, 'err');
+    add('p', tr('This decoder cannot be loaded: {error}', { error: d.error }), 'err');
     return;
   }
   if (d.def.desc) add('p', d.def.desc);
-  add('div', 'Channels', 'sec');
+  add('div', tr('Channels'), 'sec');
   const ul = add('ul', '');
   for (const c of d.def.channels) {
     const li = document.createElement('li');
@@ -613,11 +620,11 @@ function renderDecoderInfo() {
     ul.appendChild(li);
   }
   if ((d.def.options || []).length) {
-    add('div', 'Options', 'sec');
+    add('div', tr('Options'), 'sec');
     add('p', d.def.options.map((o) => o.name).join(', '));
   }
-  add('p', '* required', 'k');
-  const btn = add('button', `Add ${d.name}`, 'primary');
+  add('p', tr('* required'), 'k');
+  const btn = add('button', tr('Add {name}', { name: d.name }), 'primary');
   btn.type = 'button';
   btn.addEventListener('click', () => addDecoder(d.key));
 }
@@ -697,8 +704,8 @@ function updateDecoderSettingsStatus() {
   const st = decoders.state.get(decPop.inst.uid) || {};
   el.className = 'status' + (st.status === 'error' ? ' err' : '');
   el.textContent = st.status === 'error' ? st.error
-    : st.status === 'running' ? 'Decoding…'
-    : vp.capture ? '' : 'Decodes after the next capture.';
+    : st.status === 'running' ? tr('Decoding…')
+    : vp.capture ? '' : tr('Decodes after the next capture.');
 }
 
 function fillDecoderSettings(inst) {
@@ -709,14 +716,14 @@ function fillDecoderSettings(inst) {
   const row = (labelText, hint, control, required = false) => {
     const lab = el('label');
     lab.textContent = labelText + (required ? ' *' : '');
-    if (hint) lab.appendChild(el('small', { textContent: hint }));
+    if (hint) lab.title = hint;           // a tooltip, not small print
     if (control.id) lab.htmlFor = control.id;
     pop.appendChild(lab);
     pop.appendChild(control);
   };
   const head = el('div', { className: 'head' });
-  head.appendChild(el('b', { textContent: d ? d.def.name : inst.key }));
-  head.appendChild(el('p', { textContent: d ? d.def.desc || '' : 'This decoder is not available (any more).' }));
+  head.appendChild(el('b', { textContent: d ? d.def.name : inst.key, title: d ? d.def.desc || '' : '' }));
+  if (!d) head.appendChild(el('p', { textContent: tr('This decoder is not available (any more).') }));
   pop.appendChild(head);
   pop.appendChild(el('p', { className: 'status' }));
 
@@ -726,7 +733,7 @@ function fillDecoderSettings(inst) {
     decoders.restyle(inst, { label: name.value.trim() || (d ? d.def.name : inst.key) });
     saveSettings();
   });
-  row('Name', '', name);
+  row(tr('Name'), '', name);
   const sw = el('div', { className: 'swatches' });
   const setColor = (c) => {
     decoders.restyle(inst, { color: c });
@@ -742,19 +749,19 @@ function fillDecoderSettings(inst) {
     b.addEventListener('click', () => setColor(c));
     sw.appendChild(b);
   }
-  const pick = el('input', { type: 'color', value: inst.color, title: 'Other colour' });
+  const pick = el('input', { type: 'color', value: inst.color, title: tr('Other colour') });
   pick.addEventListener('input', () => setColor(pick.value));
   sw.appendChild(pick);
-  row('Colour', '', sw);
+  row(tr('Colour'), '', sw);
 
   if (d) {
-    pop.appendChild(el('div', { className: 'sec', textContent: 'Channels' }));
+    pop.appendChild(el('div', { className: 'sec', textContent: tr('Channels') }));
     for (const c of d.def.channels) {
       const sel = el('select', { id: `dec-c-${c.id}` });
       sel.dataset.ch = c.id;
       sel.appendChild(el('option', { value: '', textContent: '—' }));
       for (const k of order) {
-        sel.appendChild(el('option', { value: String(k), textContent: chLabel(k) + (channels[k].enabled ? '' : ' (hidden)') }));
+        sel.appendChild(el('option', { value: String(k), textContent: chLabel(k) + (channels[k].enabled ? '' : tr(' (hidden)')) }));
       }
       sel.value = inst.assign[c.id] == null ? '' : String(inst.assign[c.id]);
       sel.addEventListener('change', () => {
@@ -763,7 +770,7 @@ function fillDecoderSettings(inst) {
       });
       row(c.name, c.desc || '', sel, !c.optional);
     }
-    if ((d.def.options || []).length) pop.appendChild(el('div', { className: 'sec', textContent: 'Options' }));
+    if ((d.def.options || []).length) pop.appendChild(el('div', { className: 'sec', textContent: tr('Options') }));
     for (const o of d.def.options || []) {
       const cur = inst.options[o.id] ?? o.default;
       let ctl;
@@ -785,17 +792,17 @@ function fillDecoderSettings(inst) {
       });
       row(o.name, o.desc || '', ctl);
     }
-    if (d.def.channels.some((c) => !c.optional)) pop.appendChild(el('p', { className: 'note', textContent: '* Required channels' }));
+    if (d.def.channels.some((c) => !c.optional)) pop.appendChild(el('p', { className: 'note', textContent: tr('* Required channels') }));
   }
 
   const btns = el('div', { className: 'btns' });
-  const del = el('button', { type: 'button', className: 'del', textContent: 'Remove decoder' });
+  const del = el('button', { type: 'button', className: 'del', textContent: tr('Remove decoder') });
   del.addEventListener('click', () => {
     showDecoderSettings(null);
     decoders.remove(inst);
     saveSettings();
   });
-  const close = el('button', { type: 'button', textContent: 'Close' });
+  const close = el('button', { type: 'button', textContent: tr('Close') });
   close.addEventListener('click', () => showDecoderSettings(null));
   btns.appendChild(del);
   btns.appendChild(close);
@@ -906,7 +913,7 @@ const CHANNEL_SETS = {
 /** Apply a new enabled state for every channel; refuses to hide them all. */
 function setEnabled(want) {
   if (!want.some(Boolean)) {
-    toast('At least one channel must stay enabled', 'info');
+    toast(tr('At least one channel must stay enabled'), 'info');
     updateChannelPicker();
     return;
   }
@@ -970,7 +977,7 @@ function updateChannelPicker() {
     if (!label) return;
     label.querySelector('input').checked = ch.enabled;
     label.style.setProperty('--c', ch.color);
-    const changes = m == null ? '' : (m >> i) & 1 ? ' · changing' : ' · no change';
+    const changes = m == null ? '' : tr((m >> i) & 1 ? ' · changing' : ' · no change');
     label.querySelector('.nm').textContent = isNamed(ch, i) ? `${i} ${ch.name}` : ch.name;
     label.title = `CH${i}${isNamed(ch, i) ? ' "' + ch.name + '"' : ''}${changes}`;
     label.classList.toggle('steady', m != null && !((m >> i) & 1));
@@ -978,10 +985,8 @@ function updateChannelPicker() {
   for (const b of $('channels-pop').querySelectorAll('button[data-act]')) {
     const needsCap = b.dataset.sel === 'changing' || b.dataset.sel === 'steady';
     b.disabled = needsCap && m == null;
-    b.title = b.disabled ? 'Needs a completed capture' : '';
+    b.title = b.disabled ? tr('Needs a completed capture') : '';
   }
-  const n = channels.filter((c) => c.enabled).length;
-  $('channels-count').textContent = n === CHANNELS ? '' : `${n}/${CHANNELS}`;
 }
 
 function triggerSpec() {
@@ -1033,13 +1038,13 @@ function updateDuration() {
   const rate = currentRate();
   const el = $('duration');
   if (!n || !rate) {
-    el.textContent = n === null ? 'invalid' : '';
+    el.textContent = n === null ? tr('invalid') : '';
     $('samples-box').style.borderColor = n === null ? 'var(--danger)' : '';
     return;
   }
   const max = app.device ? app.device.max_samples : Infinity;
   $('samples-box').style.borderColor = n > max || n < 16 ? 'var(--danger)' : '';
-  el.textContent = '= ' + formatTime(n / rate, 3) + (n > max ? ` (max ${formatSI(max)})` : '');
+  el.textContent = '= ' + formatTime(n / rate, 3) + (n > max ? tr(' (max {n})', { n: formatSI(max) }) : '');
 }
 
 async function api(path, body) {
@@ -1058,7 +1063,7 @@ async function api(path, body) {
 async function runCapture() {
   const samples = parseSI($('samples').value);
   if (!samples) {
-    toast('Invalid sample count (examples: 1M, 10M, 50000)');
+    toast(tr('Invalid sample count (examples: 1M, 10M, 50000)'));
     return;
   }
   const body = {
@@ -1082,7 +1087,7 @@ async function runCapture() {
 function setRunButton(busy, online = true) {
   const b = $('run');
   b.dataset.mode = busy ? 'stop' : 'run';
-  b.title = busy ? 'Stop capture (S)' : 'Start capture (R)';
+  b.title = tr(busy ? 'Stop capture (S)' : 'Start capture (R)');
   b.disabled = !online;
 }
 
@@ -1099,9 +1104,344 @@ async function stopCapture() {
   }
 }
 
+// ---- menus (File, Help) ------------------------------------------------------------
+//
+// Desktop-style drop-down menus: click or ↓ opens, arrows move, Esc closes.
+// A submenu (File ▸ Export) opens to the right on hover, click, → or Enter.
+// An action that needs settings should open a dialog from its menu item.
+
+const menus = [];   // { btn, menu, subs: [{ wrap, trigger, menu, timer }] }
+
+/** subs: [{ wrap, trigger, menu }] elements of the submenus inside `menu`. */
+function buildMenu(btn, menu, subs = []) {
+  const m = { btn, menu, subs: subs.map((x) => ({ ...x, timer: 0 })) };
+  menus.push(m);
+  // ev.detail is 0 when the button was "clicked" with the keyboard: then the
+  // first item gets the focus, as in a desktop menu.
+  btn.addEventListener('click', (ev) => showMenu(m, menu.hidden, ev.detail === 0));
+  btn.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'ArrowDown') return;
+    ev.preventDefault();
+    showMenu(m, true, true);
+  });
+  document.addEventListener('pointerdown', (ev) => {
+    if (!menu.hidden && !menu.contains(ev.target) && !btn.contains(ev.target)) showMenu(m, false);
+  });
+  for (const sub of m.subs) {
+    // Open while the pointer is over the item or the submenu; close a moment
+    // after it leaves, so a slightly diagonal move does not close it.
+    sub.wrap.addEventListener('pointerenter', () => {
+      clearTimeout(sub.timer);
+      if (!sub.trigger.disabled) showSubmenu(sub, true);
+    });
+    sub.wrap.addEventListener('pointerleave', () => {
+      clearTimeout(sub.timer);
+      sub.timer = setTimeout(() => showSubmenu(sub, false), 250);
+    });
+    sub.trigger.addEventListener('click', (ev) => showSubmenu(sub, true, ev.detail === 0));
+  }
+  menu.addEventListener('click', (ev) => {
+    const item = ev.target.closest && ev.target.closest('[role^="menuitem"]');
+    if (item && !m.subs.some((x) => x.trigger === item)) showMenu(m, false);
+  });
+  menu.addEventListener('keydown', (ev) => {
+    const active = document.activeElement;
+    const sub = m.subs.find((x) => x.menu.contains(active));
+    const items = menuItems(sub ? sub.menu : menu);
+    const k = items.indexOf(active);
+    const trigSub = m.subs.find((x) => x.trigger === active);
+    if (ev.key === 'Escape' || (ev.key === 'ArrowLeft' && sub)) {
+      if (sub) {
+        showSubmenu(sub, false);
+        sub.trigger.focus();
+      } else {
+        showMenu(m, false);
+        btn.focus();
+      }
+    } else if (ev.key === 'ArrowRight' && trigSub) {
+      showSubmenu(trigSub, true, true);
+    } else if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      const step = ev.key === 'ArrowDown' ? 1 : -1;
+      if (items.length) items[(k + step + items.length) % items.length].focus();
+    } else if (ev.key === 'Home' || ev.key === 'End') {
+      if (items.length) items[ev.key === 'Home' ? 0 : items.length - 1].focus();
+    } else if (ev.key === 'Tab') {
+      showMenu(m, false);
+      return;
+    } else {
+      return;
+    }
+    ev.preventDefault();
+    ev.stopPropagation();
+  });
+  return m;
+}
+
+/** The usable items of one menu level (not those of a submenu inside it). */
+function menuItems(menu) {
+  return [...menu.querySelectorAll('[role^="menuitem"]')]
+    .filter((e) => e.closest('[role="menu"]') === menu && !e.disabled && !e.classList.contains('disabled'));
+}
+
+function showMenu(m, open, focusFirst = false) {
+  m.menu.hidden = !open;
+  m.btn.setAttribute('aria-expanded', String(open));
+  if (!open) for (const sub of m.subs) showSubmenu(sub, false);
+  if (open && focusFirst) {
+    const first = menuItems(m.menu)[0];
+    if (first) first.focus();
+  }
+}
+
+function showSubmenu(sub, open, focusFirst = false) {
+  clearTimeout(sub.timer);
+  sub.menu.hidden = !open;
+  sub.trigger.setAttribute('aria-expanded', String(open));
+  if (open && focusFirst) {
+    const first = menuItems(sub.menu)[0];
+    if (first) first.focus();
+  }
+}
+
+/** Close the open menu, if any; true if there was one. */
+function closeMenus() {
+  const open = menus.filter((m) => !m.menu.hidden);
+  for (const m of open) showMenu(m, false);
+  return open.length > 0;
+}
+
+function buildMenus() {
+  buildMenu($('file-btn'), $('file-menu'),
+    [{ wrap: $('export-sub'), trigger: $('export-btn'), menu: $('export-menu') }]);
+  buildMenu($('help-btn'), $('help-menu'),
+    [{ wrap: $('lang-sub'), trigger: $('lang-btn'), menu: $('lang-menu') }]);
+  $('help-keys').addEventListener('click', () => showShortcuts(true));
+  // Help ▸ Language ▸ one entry per language, named in its own language.
+  for (const [code, name] of LANGUAGES) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'menuitemradio');
+    b.dataset.lang = code;
+    b.lang = code;
+    b.textContent = name;
+    b.addEventListener('click', () => changeLanguage(code));
+    $('lang-menu').appendChild(b);
+  }
+  markLanguage();
+  $('help-about').addEventListener('click', showAbout);
+  for (const id of DIALOGS) {
+    const dlg = $(id);
+    dlg.querySelector('.close').addEventListener('click', () => showDialog(id, false));
+    // A click on the dark backdrop (the dialog element itself) closes it.
+    dlg.addEventListener('click', (ev) => { if (ev.target === dlg) showDialog(id, false); });
+  }
+  renderShortcuts();
+}
+
+// ---- language (Help ▸ Language) -----------------------------------------------------------
+
+function markLanguage() {
+  for (const b of $('lang-menu').children) b.setAttribute('aria-checked', String(b.dataset.lang === getLang()));
+}
+
+/** Switch the UI language at once: the page's fixed text, then what the
+ * code has written (status, lists, tooltips, open popups). */
+function changeLanguage(code) {
+  setLang(code);
+  markLanguage();
+  applyI18n(document);
+  applyTheme();
+  setRunButton(app.status ? BUSY.has(app.status.state) : false, !!app.ws);
+  if (app.status) onStatus(app.status);
+  else if (!app.ws) {
+    $('state').textContent = tr('offline');
+  }
+  if (app.device) showDevice(app.device);
+  for (const o of document.querySelectorAll ? document.querySelectorAll('select.trig option') : []) {
+    if (o.dataset.title) o.title = tr(o.dataset.title);
+  }
+  updateDuration();
+  updateSamplePresets();
+  updateExportLinks();
+  updateChannelPicker();
+  updateMeasureReadout();
+  updateViewInfo();
+  renderShortcuts();
+  renderDecoderCatalog();
+  syncDecoders();
+  if (decPop.inst) fillDecoderSettings(decPop.inst);
+  if (dialogOpen('about-dialog')) showAbout();
+}
+
+// ---- keyboard shortcuts (Help ▸ Keyboard shortcuts) ------------------------------------
+//
+// What the keys and mouse do, for the help dialog. The keydown handler below
+// carries them out; keep the two in step. (User-defined shortcuts would start
+// here: give each entry an id and look keys up through this table.)
+
+const SHORTCUTS = [
+  ['Capture', [
+    [['R'], 'Run'],
+    [['S'], 'Stop'],
+  ]],
+  ['View', [
+    [['+', '−'], 'Zoom in / out ×2'],
+    [['Double-click', 'Right double-click'], 'Zoom in / out ×2 at the pointer (Ctrl: ×8)'],
+    [['Wheel'], 'Zoom at the pointer'],
+    [['Drag', 'Shift+Wheel', '←', '→'], 'Pan'],
+    [['F'], 'Fit the whole capture'],
+    [['Z'], 'Zoom to cursors A–B'],
+    [['T'], 'Go to the trigger'],
+  ]],
+  ['Cursors', [
+    [['Shift+Click', 'Shift+Right-click'], 'Place cursor A / B (hold to drag)'],
+    [['A', 'B'], 'Place cursor A / B at the pointer'],
+    [['Alt'], 'Hold while placing: do not snap to an edge'],
+    [['[', ']'], 'Cursor A to the previous / next edge'],
+    [['{', '}'], 'Cursor B to the previous / next edge'],
+    [['Esc'], 'Clear the cursors'],
+  ]],
+  ['File', [
+    [['Ctrl+O'], 'Open a session file'],
+    [['Ctrl+S'], 'Save the session'],
+  ]],
+  ['Help', [
+    [['?'], 'This list'],
+  ]],
+];
+
+function renderShortcuts() {
+  const box = $('keys-list');
+  box.textContent = '';
+  for (const [group, items] of SHORTCUTS) {
+    const sec = document.createElement('section');
+    const h = document.createElement('h3');
+    h.textContent = tr(group);
+    sec.appendChild(h);
+    for (const [keys, what] of items) {
+      const row = document.createElement('div');
+      row.className = 'key-row';
+      const k = document.createElement('span');
+      k.className = 'k';
+      keys.forEach((key) => {
+        const kb = document.createElement('kbd');
+        kb.textContent = tr(key);
+        k.appendChild(kb);
+      });
+      const d = document.createElement('span');
+      d.textContent = tr(what);
+      row.appendChild(k);
+      row.appendChild(d);
+      sec.appendChild(row);
+    }
+    box.appendChild(sec);
+  }
+}
+
+const DIALOGS = ['keys-dialog', 'about-dialog'];
+
+function dialogOpen(id) {
+  const dlg = $(id);
+  return dlg.open === true || (dlg.open === undefined && !dlg.hidden);
+}
+
+/** A modal dialog is open: keys belong to it (Esc closes it). */
+function anyDialogOpen() {
+  return DIALOGS.some(dialogOpen);
+}
+
+function showDialog(id, open) {
+  const dlg = $(id);
+  closeMenus();
+  if (open && !dialogOpen(id)) {
+    if (dlg.showModal) dlg.showModal();
+    else dlg.hidden = false;
+  } else if (!open && dialogOpen(id)) {
+    if (dlg.close) dlg.close();
+    else dlg.hidden = true;
+  }
+}
+
+function showShortcuts(open) {
+  showDialog('keys-dialog', open);
+}
+
+// ---- Help ▸ About ------------------------------------------------------------------------
+
+const ABOUT = {
+  developer: 'Brandon-git-hub',
+  github: 'https://github.com/Brandon-git-hub/WebPulse',
+  license: 'MIT',
+};
+
+async function showAbout() {
+  // Ask again: the board may have been connected since the page loaded.
+  try {
+    app.device = await api('api/device');
+    showDevice(app.device);
+  } catch { /* show what we have */ }
+  const d = app.device || {};
+  $('about-version').textContent = d.version ? `v${d.version}` : '';
+  const device = d.backend === 'sim' ? tr('Simulator')
+    : d.connected ? `${d.model}${d.firmware ? ' · ' + d.firmware : ''}` : tr('FX2 not connected');
+  const rows = [
+    [tr('Version'), d.version || '–'],
+    [tr('Build date'), d.build || '–'],
+    [tr('OS'), d.os || '–'],
+    [tr('Browser'), browserName()],
+    [tr('Device'), device],
+    [tr('Dependencies'), [
+      `CivetWeb ${d.civetweb || ''} (MIT)`,
+      d.libusb ? `libusb ${d.libusb} (LGPL-2.1)` : null,
+      'fx2lafw firmware 0.1.7 (GPL-2.0+)',
+    ].filter(Boolean)],
+    [tr('Developer'), ABOUT.developer],
+    ['GitHub', { href: ABOUT.github, text: ABOUT.github.replace(/^https:\/\//, '') }],
+    [tr('License'), ABOUT.license],
+  ];
+  const dl = $('about-list');
+  dl.textContent = '';
+  for (const [k, v] of rows) {
+    const dt = document.createElement('dt');
+    dt.textContent = k;
+    const dd = document.createElement('dd');
+    if (Array.isArray(v)) {
+      for (const line of v) {
+        const div = document.createElement('div');
+        div.textContent = line;
+        dd.appendChild(div);
+      }
+    } else if (v && v.href) {
+      const a = document.createElement('a');
+      a.href = v.href;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = v.text;
+      dd.appendChild(a);
+    } else {
+      dd.textContent = v;
+    }
+    dl.appendChild(dt);
+    dl.appendChild(dd);
+  }
+  showDialog('about-dialog', true);
+}
+
+/** "Chrome 131", "Edge 131", "Firefox 133", … from the user agent. */
+function browserName() {
+  const ua = (globalThis.navigator && navigator.userAgent) || '';
+  for (const [re, name] of [[/Edg\/(\d+)/, 'Edge'], [/OPR\/(\d+)/, 'Opera'], [/Firefox\/(\d+)/, 'Firefox'],
+    [/Chrome\/(\d+)/, 'Chrome'], [/Version\/(\d+).*Safari/, 'Safari']]) {
+    const m = re.exec(ua);
+    if (m) return `${name} ${m[1]}`;
+  }
+  return ua ? ua.slice(0, 60) : '–';
+}
+
 function updateExportLinks() {
   const has = !!vp.capture;
   $('export-png').disabled = !has;
+  $('export-btn').disabled = !has;
   const names = encodeURIComponent(channels.map((c) => c.name.replace(/,/g, '_')).join(','));
   const on = channels.flatMap((c, i) => (c.enabled ? [i] : []));
   const sel = on.length === CHANNELS ? '' : `&channels=${on.join(',')}`;
@@ -1109,9 +1449,8 @@ function updateExportLinks() {
     const a = $('export-' + fmt);
     a.classList.toggle('disabled', !has);
     a.href = has ? `api/export?fmt=${fmt}&names=${names}${sel}` : '#';
-    a.title = has ? (fmt === 'sr' ? 'Save as a sigrok session file (.sr), opens in PulseView'
-      : `Download the capture as ${fmt.toUpperCase()}`) +
-      (sel ? ` (CH${on.join(', CH')})` : '') : 'No capture';
+    // Hidden channels are left out: say so where it matters, in the tooltip.
+    a.title = !has ? tr('No capture yet') : sel ? tr('Only the shown channels: {list}', { list: 'CH' + on.join(', CH') }) : '';
   }
 }
 
@@ -1122,7 +1461,7 @@ function onStatus(st) {
   const busy = BUSY.has(st.state);
   const pill = $('state');
   pill.dataset.state = st.state;
-  pill.textContent = st.state === 'armed' ? 'waiting for trigger' : st.state;
+  pill.textContent = tr(st.state === 'armed' ? 'waiting for trigger' : st.state);
   setRunButton(busy);
 
   const wrap = $('progress-wrap');
@@ -1130,7 +1469,7 @@ function onStatus(st) {
   if (st.samples) $('progress').style.width = (100 * st.filled / st.samples).toFixed(1) + '%';
 
   let detail = '';
-  if (st.state === 'armed') detail = `${(st.elapsed_ms / 1000).toFixed(1)} s · trigger ${st.trigger}`;
+  if (st.state === 'armed') detail = tr('{s} s · trigger {trig}', { s: (st.elapsed_ms / 1000).toFixed(1), trig: st.trigger });
   else if (st.state === 'capturing') detail = `${formatSI(st.filled)} / ${formatSI(st.samples)}`;
   else if (st.state === 'error') detail = st.error;
   else if (st.state === 'done' && st.capture)
@@ -1140,7 +1479,7 @@ function onStatus(st) {
   $('state-detail').title = detail;
   if (st.state === 'error' && st.seq !== onStatus.lastErrSeq) {
     onStatus.lastErrSeq = st.seq;
-    toast(st.error || 'Capture failed');
+    toast(st.error || tr('Capture failed'));
   }
 
   const cap = st.capture;
@@ -1167,22 +1506,28 @@ function onStatus(st) {
   }
   if (!cap) {
     $('empty').querySelector('.big').textContent =
-      st.state === 'armed' ? 'Waiting for trigger…' :
-      busy ? 'Capturing…' :
-      st.state === 'error' ? 'Capture failed' : 'No capture';
+      tr(st.state === 'armed' ? 'Waiting for trigger…' :
+        busy ? 'Capturing…' :
+        st.state === 'error' ? 'Capture failed' : 'No capture yet');
   }
   if (!$('channels-pop').hidden) updateChannelPicker();
 }
 
+/** Row 1 always shows whether the board is connected (or the simulator). */
 function showDevice(d) {
-  $('device').textContent = `${d.model}${d.firmware ? ' · ' + d.firmware : ''} · v${d.version}`;
-  $('device').title = $('device').textContent;
+  const el = $('device');
+  const state = d.backend === 'sim' ? 'sim' : d.connected ? 'on' : 'off';
+  el.dataset.state = state;
+  el.textContent = state === 'sim' ? tr('Simulator') : state === 'on' ? d.model : tr('FX2 not connected');
+  el.title = state === 'sim' ? tr('Simulated signals (webpulse -b sim)')
+    : state === 'on' ? tr('Connected: {model}', { model: d.model + (d.firmware ? ', ' + d.firmware : '') })
+    : tr('No FX2 board found. It is looked for again when a capture starts.');
 }
 
 /** Upload a .sr file; the new capture then arrives through the status. */
 async function openFile(file) {
   if (!file) return;
-  toast(`Opening ${file.name}…`, 'info');
+  toast(tr('Opening {name}…', { name: file.name }), 'info');
   try {
     const r = await fetch(`api/open?name=${encodeURIComponent(file.name)}`, {
       method: 'POST',
@@ -1192,7 +1537,7 @@ async function openFile(file) {
     const js = await r.json().catch(() => ({}));
     if (!r.ok || !js.ok) throw new Error(js.error || `${r.status} ${r.statusText}`);
   } catch (e) {
-    toast(`Cannot open ${file.name}: ${e.message}`);
+    toast(tr('Cannot open {name}: {error}', { name: file.name, error: e.message }));
   }
 }
 
@@ -1258,8 +1603,8 @@ function connect() {
     app.ws = null;
     edges.reset();
     $('state').dataset.state = 'offline';
-    $('state').textContent = 'offline';
-    $('state-detail').textContent = 'reconnecting…';
+    $('state').textContent = tr('offline');
+    $('state-detail').textContent = tr('reconnecting…');
     setRunButton(false, false);
     setTimeout(connect, app.wsRetry);
     app.wsRetry = Math.min(app.wsRetry * 2, 5000);
@@ -1268,7 +1613,7 @@ function connect() {
 
 // ---- canvas interaction -------------------------------------------------------------------
 
-const drag = { active: false, mode: null, button: 0, x0: 0, last: 0, moved: false, saved: false };
+const drag = { active: false, mode: null, button: 0, x0: 0, last: 0, moved: false };
 
 function localX(ev) {
   const r = canvas.getBoundingClientRect();
@@ -1300,7 +1645,6 @@ const DBL_MS = 400, DBL_PX = 6, CLICK_PX = 3;
 const lastClick = { button: -1, at: 0, x: 0 };
 
 function zoomBy(x, factor) {
-  vp.save();
   vp.zoomAt(x, factor);
   updateZoomButtons();
 }
@@ -1346,11 +1690,7 @@ canvas.addEventListener('pointermove', (ev) => {
   if (drag.active) {
     if (Math.abs(x - drag.x0) > CLICK_PX) drag.moved = true;
     if (drag.mode === 'pan' && drag.moved) {
-      if (!drag.saved) {
-        vp.save();
-        drag.saved = true;
-        canvas.classList.add('dragging');
-      }
+      canvas.classList.add('dragging');
       vp.panPx(x - drag.last);
       updateZoomButtons();
     } else if (drag.mode.startsWith('cursor-') && drag.moved) {
@@ -1371,7 +1711,6 @@ canvas.addEventListener('pointerup', (ev) => {
   canvas.classList.remove('dragging');
   const plain = !drag.moved && (drag.mode === 'pan' || drag.mode === 'click');
   drag.active = false;
-  drag.saved = false;
   if (!plain) {
     lastClick.button = -1;
     return;
@@ -1393,13 +1732,9 @@ canvas.addEventListener('pointerleave', () => {
   $('cur-m').textContent = '–';
 });
 
-let lastWheel = 0;
 canvas.addEventListener('wheel', (ev) => {
   if (!vp.capture) return;
   ev.preventDefault();
-  // One history entry per burst of wheel events.
-  if (performance.now() - lastWheel > 500) vp.save();
-  lastWheel = performance.now();
   const { x } = localX(ev);
   const dx = ev.shiftKey ? ev.deltaY : ev.deltaX;
   const dy = ev.shiftKey ? 0 : ev.deltaY;
@@ -1418,39 +1753,39 @@ canvas.addEventListener('wheel', (ev) => {
 function zoomToCursors() {
   const { a, b } = renderer.cursors;
   if (a == null || b == null || a === b) return;
-  vp.save();
   vp.zoomTo(Math.min(a, b), Math.max(a, b));
   updateZoomButtons();
 }
 
 function fitView() {
-  vp.save();
   vp.fit();
-  updateZoomButtons();
-}
-
-function goBack() {
-  vp.back();
   updateZoomButtons();
 }
 
 function updateZoomButtons() {
   const has = !!vp.capture;
   const { a, b } = renderer.cursors;
-  for (const id of ['zoom-in', 'zoom-out', 'zoom-fit']) $(id).disabled = !has;
+  for (const id of ['zoom-in', 'zoom-out', 'zoom-fit', 'edge-prev', 'edge-next']) $(id).disabled = !has;
   $('zoom-ab').disabled = !has || a == null || b == null || a === b;
-  $('zoom-back').disabled = !has || !vp.canGoBack;
 }
 
 $('zoom-in').addEventListener('click', () => zoomBy(vp.width / 2, 0.5));
 $('zoom-out').addEventListener('click', () => zoomBy(vp.width / 2, 2));
 $('zoom-fit').addEventListener('click', fitView);
 $('zoom-ab').addEventListener('click', zoomToCursors);
-$('zoom-back').addEventListener('click', goBack);
 $('edge-prev').addEventListener('click', (ev) => stepEdge(ev.shiftKey ? 'b' : 'a', -1));
 $('edge-next').addEventListener('click', (ev) => stepEdge(ev.shiftKey ? 'b' : 'a', 1));
 
 document.addEventListener('keydown', (ev) => {
+  if (anyDialogOpen()) return;
+  // Ctrl+O / Ctrl+S (Cmd on a Mac) open and save, also from a text box.
+  if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && !ev.shiftKey && /^[os]$/i.test(ev.key)) {
+    ev.preventDefault();
+    closeMenus();
+    if (ev.key.toLowerCase() === 'o') $('open-file').click();
+    else if (!$('export-sr').classList.contains('disabled')) $('export-sr').click();
+    return;
+  }
   const tag = (ev.target && ev.target.tagName) || '';
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || ev.ctrlKey || ev.metaKey || ev.altKey) return;
   const W = vp.width;
@@ -1470,12 +1805,8 @@ document.addEventListener('keydown', (ev) => {
     case 'z': case 'Z':
       zoomToCursors();
       break;
-    case 'Backspace':
-      goBack();
-      break;
     case 't': case 'T':
       if (vp.capture && vp.capture.trigger_pos >= 0) {
-        vp.save();
         vp.centreOn(vp.capture.trigger_pos);
         updateZoomButtons();
       }
@@ -1495,7 +1826,11 @@ document.addEventListener('keydown', (ev) => {
     case 'a': case 'A': case 'b': case 'B':
       if (renderer.hoverX != null) setCursor(ev.key.toLowerCase(), renderer.hoverX, !ev.altKey);
       break;
+    case '?':
+      showShortcuts(true);
+      break;
     case 'Escape':
+      if (closeMenus()) break;
       if (!$('channels-pop').hidden) {
         showChannelPicker(false);
         break;
@@ -1621,7 +1956,7 @@ function exportPng() {
     `${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}.png`;
   out.toBlob((blob) => {
     if (!blob) {
-      toast('Could not create the image');
+      toast(tr('Could not create the image'));
       return;
     }
     const url = URL.createObjectURL(blob);
@@ -1643,7 +1978,7 @@ function updateViewInfo() {
   }
   const span = (vp.width * vp.spp) / vp.capture.rate;
   const z = vp.spp >= 1 ? `${formatSI(Math.round(vp.spp))} smp/px` : `${(1 / vp.spp).toFixed(1)} px/smp`;
-  el.textContent = `view ${formatTime(span, 3)} · ${z}`;
+  el.textContent = tr('view {span} · {zoom}', { span: formatTime(span, 3), zoom: z });
 }
 
 // ---- init ------------------------------------------------------------------------------
@@ -1651,6 +1986,8 @@ function updateViewInfo() {
 async function init() {
   buildChannelList();
   buildChannelPicker();
+  applyI18n(document);
+  buildMenus();
   buildDecoderDock();
   buildDecoderSettings();
   document.documentElement.style.setProperty('--dec-row-h', DEC_ROW_H + 'px');
@@ -1711,7 +2048,7 @@ async function init() {
     sel.value = want;
     showDevice(app.device);
   } catch (e) {
-    toast('Cannot reach the WebPulse server: ' + e.message);
+    toast(tr('Cannot reach the WebPulse server: {error}', { error: e.message }));
   }
   updateDuration();
   updateSamplePresets();
