@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1
 
 - macOS support: a universal binary (Apple silicon and Intel, macOS 11 or
   newer) with libusb statically linked, built and tested in CI. No driver is
