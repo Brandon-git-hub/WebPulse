@@ -14,23 +14,54 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * Start Chrome with one page. Returns { send, js, waitFor, screenshot, mouse,
  * click, errors, close }; errors collects script errors from the page.
  */
-export async function launch({ width = 1400, height = 900, scale = 1 } = {}) {
+/** Start headless Chrome; resolves with the process and its DevTools URL. */
+function startChrome(width, height, timeoutMs) {
   const profile = mkdtempSync(path.join(tmpdir(), 'webpulse-chrome-'));
   const exe = process.env.CHROME || 'chromium';
   const chrome = spawn(exe, [
     '--headless', '--no-sandbox', '--disable-gpu', '--hide-scrollbars',
+    '--no-first-run', '--no-default-browser-check',
     '--remote-debugging-port=0', `--user-data-dir=${profile}`, `--window-size=${width},${height}`, 'about:blank',
   ], { stdio: ['ignore', 'ignore', 'pipe'] });
-  const wsUrl = await new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     let err = '';
+    const timer = setTimeout(() => {
+      chrome.kill('SIGKILL');
+      rmSync(profile, { recursive: true, force: true });
+      reject(new Error(`Chrome did not start in ${timeoutMs / 1000} s: ${err.slice(-400) || '(no output)'}`));
+    }, timeoutMs);
     chrome.stderr.on('data', (d) => {
       err += d;
       const m = /DevTools listening on (ws:\/\/\S+)/.exec(err);
-      if (m) resolve(m[1]);
+      if (m) {
+        clearTimeout(timer);
+        resolve({ chrome, wsUrl: m[1], profile });
+      }
     });
-    chrome.on('exit', (c) => reject(new Error(`${exe} exited (${c}): ${err.slice(-400)}`)));
-    setTimeout(() => reject(new Error('Chrome did not start')), 15000);
+    chrome.on('error', (e) => {         // e.g. the executable is not there
+      clearTimeout(timer);
+      reject(new Error(`cannot run ${exe}: ${e.message}`));
+    });
+    chrome.on('exit', (c) => {
+      clearTimeout(timer);
+      reject(new Error(`${exe} exited (${c}): ${err.slice(-400)}`));
+    });
   });
+}
+
+export async function launch({ width = 1400, height = 900, scale = 1 } = {}) {
+  // A cold start on a CI runner can be slow: wait up to a minute, and try a
+  // second time before giving up.
+  let chrome, wsUrl, profile;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      ({ chrome, wsUrl, profile } = await startChrome(width, height, 60000));
+      break;
+    } catch (e) {
+      if (attempt >= 2) throw e;
+      console.error(`${e.message}; trying again`);
+    }
+  }
   const http = wsUrl.replace(/^ws:\/\/([^/]+).*/, 'http://$1');
   const target = (await (await fetch(`${http}/json/list`)).json()).find((t) => t.type === 'page');
   const ws = new WebSocket(target.webSocketDebuggerUrl);
