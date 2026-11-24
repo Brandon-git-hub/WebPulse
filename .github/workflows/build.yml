@@ -209,7 +209,8 @@ jobs:
         # Homebrew libusb) has to be installed.
         run: |
           lipo build/macos/webpulse -verify_arch arm64 x86_64
-          deps=$(otool -L build/macos/webpulse | tail -n +2 | awk '{print $1}')
+          # One "webpulse (architecture …):" header per slice; the rest are libraries.
+          deps=$(otool -L build/macos/webpulse | awk '!/:$/ {print $1}' | sort -u)
           echo "$deps"
           if echo "$deps" | grep -vE '^(/usr/lib/|/System/Library/)'; then
             echo "unexpected library dependency" >&2
