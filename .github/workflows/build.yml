@@ -77,9 +77,9 @@ jobs:
           CHROME=google-chrome node tests/browser_check.mjs http://127.0.0.1:18081/ screenshots
           kill "$pid"
 
-      # Only to see what went wrong; a passing run needs no screenshots.
+      # For looking at a CI run; the release job leaves them out.
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
           name: browser-screenshots
           path: screenshots/

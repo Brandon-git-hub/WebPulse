@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.3
 
 - Windows: double-clicking `webpulse.exe` no longer leaves a console window.
   The UI opens in the browser, and WebPulse exits once the last browser tab
@@ -10,6 +10,8 @@
   WebPulse behaves as before.
 - `webpulse.exe` has an icon: the square-wave logo from the UI, made from the
   favicon at build time (`tools/make_icon.py`).
+- The Windows CI artifact unzips straight to `webpulse.exe` and its files
+  (no zip inside the zip).
 
 ## 0.2.2
 

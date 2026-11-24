@@ -186,7 +186,7 @@ webpulse --open capture.sr                                        # 在介面中
 WebPulse 預設只接受本機連線。使用 `--listen 0.0.0.0`（或本機某個網路介面的位址）後，其他電腦即可連線，但需要存取權杖（Access Token）。WebPulse 啟動時會產生一組隨機權杖，並顯示連線網址：
 
 ```
-WebPulse 0.2.2 listening on port 9002  (Ctrl+C to quit)
+WebPulse 0.2.3 listening on port 9002  (Ctrl+C to quit)
   on this computer:  http://localhost:9002/
   from elsewhere:    http://<this-computer>:9002/?token=930b25a523cc8bb39041ac3f524115ba
 ```
