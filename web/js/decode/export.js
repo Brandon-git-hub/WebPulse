@@ -3,7 +3,7 @@
 // sorted by start), then the decoder's summary under "## summary". Used by
 // File ▸ Export in the UI and by tools/wp-decode.mjs, so both write the same.
 //
-//   # WebPulse 0.3.1 decoder export
+//   # WebPulse 0.4.0 decoder export
 //   # capture   a.sr  (opened 2026-11-27 11:46:13)
 //   # rate      12000000 Hz, 10000000 samples, trigger at sample 100000
 //   # decoder   uart  (built-in)
@@ -20,7 +20,7 @@
 
 /**
  * The export text, as an array of chunks (join them, or hand them to a Blob).
- *   version:  'WebPulse 0.3.1'
+ *   version:  'WebPulse 0.4.0'
  *   capture:  { source, time, timeKind, rate, n, trigger_pos }   source '' = a
  *             capture; time = Unix seconds (0 = unknown), timeKind how to
  *             label it for a file: 'opened' (default) or 'modified'

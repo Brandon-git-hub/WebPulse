@@ -199,7 +199,7 @@ webpulse --open capture.sr                                        # 在介面中
 WebPulse 預設只接受本機連線。使用 `--listen 0.0.0.0`（或本機某個網路介面的位址）後，其他電腦即可連線，但需要存取權杖（Access Token）。WebPulse 啟動時會產生一組隨機權杖，並顯示連線網址：
 
 ```
-WebPulse 0.3.1 listening on port 9002  (Ctrl+C to quit)
+WebPulse 0.4.0 listening on port 9002  (Ctrl+C to quit)
   on this computer:  http://localhost:9002/
   from elsewhere:    http://<this-computer>:9002/?token=930b25a523cc8bb39041ac3f524115ba
 ```
@@ -291,7 +291,7 @@ export default {
 **File ▸ Export ▸ Decoder annotations…** 與 `wp-decode.mjs` 輸出相同的格式：開頭是以 `#` 起始的檔頭，記錄結果的來源；接著每筆標註一行，欄位以 Tab 分隔（所選的列合併後依開始時間排序）；最後是摘要。
 
 ```
-# WebPulse 0.3.1 decoder export
+# WebPulse 0.4.0 decoder export
 # capture   uart.sr  (modified 2026-11-27 11:46:13)
 # rate      1000000 Hz, 200000 samples, no trigger
 # decoder   uart  (built-in)

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - **File ▸ Export ▸ Decoder annotations…** writes one decoder's annotations as
   a text file: a header that says where the result came from (capture, rate,
