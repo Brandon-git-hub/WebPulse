@@ -42,6 +42,10 @@ const { autoAssign, normName } = await loadWeb('js/decode/assign.js');
 
 const USAGE = `Usage: node wp-decode.mjs FILE.sr --decoder ID|FILE.js [options]
 
+FILE.sr is a sigrok / PulseView session file, as saved by WebPulse (File >
+Save session or webpulse -c -o x.sr). VCD and CSV files are not read: convert
+them in PulseView, or capture again.
+
   -d, --decoder ID|FILE   a built-in decoder (uart, spi, i2c, parallel, counter)
                           or a decoder file (e.g. decoders/pwm.js)
       --opt NAME=VALUE    a decoder option (repeatable)
@@ -201,7 +205,13 @@ function readZip(buf, path) {
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) {
     if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
   }
-  if (eocd < 0) fail(`${path}: not a zip file`);
+  if (eocd < 0) {
+    const head = buf.toString('latin1', 0, Math.min(buf.length, 512));
+    if (/\$(timescale|var|enddefinitions|date|version)\b/.test(head)) {
+      fail(`${path} is a VCD file; only .sr session files can be decoded (see --help)`);
+    }
+    fail(`${path} is not a .sr session file (not a zip file; see --help)`);
+  }
   const count = buf.readUInt16LE(eocd + 10);
   let p = buf.readUInt32LE(eocd + 16);
   const out = new Map();
