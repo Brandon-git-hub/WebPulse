@@ -375,7 +375,7 @@ Annotations made before the error are kept.
 
 ### Decoder annotations as text
 
-**File ▸ Export ▸ Decoder annotations…** and `tools/wp-decode.mjs` write the
+**File ▸ Export ▸ Decoder annotations…** and `wp-decode.mjs` write the
 same format: a header of `#` lines that tells where the result came from, one
 tab-separated line per annotation (all chosen rows together, sorted by start),
 then the summary.
@@ -404,17 +404,20 @@ then the summary.
 - For a decoder file, the header has its name and CRC-32, so a result can be
   traced back to the version of the decoder that made it.
 
-**Decoding without the UI:** `tools/wp-decode.mjs` runs a decoder on a `.sr`
-file with Node.js 18 or later, from a copy of this repository (it uses the
-runtime in `web/js/decode/`):
+**Decoding without the UI:** `wp-decode.mjs`, next to the executable in the
+release archive, runs a decoder on a `.sr` file. It needs Node.js 18 or later
+(WebPulse itself does not) and nothing else: the decoder runtime and the
+built-in decoders of that release are inside it. Your own decoders are found
+in `decoders/` beside it, as for WebPulse.
 
 ```bash
-node tools/wp-decode.mjs capture.sr -d uart --opt baud=9600 -o capture-uart.txt
-node tools/wp-decode.mjs capture.sr -d decoders/pwm.js --ch pwm=CH4 --range 10ms:20ms
-node tools/wp-decode.mjs -d spi --list        # the decoder's inputs, options and rows
+node wp-decode.mjs capture.sr -d uart --opt baud=9600 -o capture-uart.txt
+node wp-decode.mjs capture.sr -d pwm --ch pwm=CH4 --range 10ms:20ms
+node wp-decode.mjs -d spi --list        # the decoder's inputs, options and rows
 ```
 
-Inputs are assigned by channel name as in the UI; `--ch INPUT=NAME|CHn`
+In a copy of this repository, run `node tools/wp-decode.mjs` instead: it uses
+`web/js/decode/` and `web/decoders/` directly. Inputs are assigned by channel name as in the UI; `--ch INPUT=NAME|CHn`
 overrides that. `--rows a,b` chooses the rows. The exit status is 2 when the
 decoder reported an error (the file is still written). `--help` lists every
 option.
@@ -487,7 +490,7 @@ web/          UI (plain ES modules, no build step), embedded into the executable
   js/decode/  decoder runtime
 decoders/     example user decoder, copied next to the executable
 tests/        unit tests, decoder tests, smoke test, browser check
-tools/        wp-decode.mjs (decode a .sr file without the UI), embed_web.py, make_icon.py (Windows icon from the favicon), package.py (release archives), docshots.mjs (README images)
+tools/        wp-decode.mjs (decode a .sr file without the UI), embed_web.py, make_icon.py (Windows icon from the favicon), package.py (release archives, with wp-decode.mjs made self-contained), docshots.mjs (README images)
 cmake/        Windows cross-compile toolchain
 firmware/     fx2lafw-saleae-logic.fw (GPLv2+, loaded at run time)
 third_party/  CivetWeb 1.16 (MIT)

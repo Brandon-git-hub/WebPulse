@@ -88,6 +88,23 @@ jobs:
       - name: Package
         run: python3 tools/package.py build/linux linux-x86_64 dist
 
+      # The packaged wp-decode.mjs runs on its own (outside the repository)
+      # and decodes exactly like tools/wp-decode.mjs.
+      - name: Check the packaged wp-decode.mjs
+        run: |
+          mkdir "$RUNNER_TEMP/pkg"
+          tar xzf dist/*.tar.gz -C "$RUNNER_TEMP/pkg" --strip-components=1
+          ./build/linux/webpulse -b sim -c -r 1M -n 200k -o "$RUNNER_TEMP/sim.sr"
+          # built-in uart on CH0, the user decoder pwm (decoders/ beside it) on CH4
+          for run in "uart rx=CH0" "pwm pwm=CH4"; do
+            set -- $run
+            d=$1
+            (cd "$RUNNER_TEMP" && node pkg/wp-decode.mjs sim.sr -d "$d" --ch "$2") > "$RUNNER_TEMP/pkg-$d.txt"
+            node tools/wp-decode.mjs "$RUNNER_TEMP/sim.sr" -d "$d" --ch "$2" > "$RUNNER_TEMP/repo-$d.txt"
+            diff <(grep -v '^# result' "$RUNNER_TEMP/pkg-$d.txt") <(grep -v '^# result' "$RUNNER_TEMP/repo-$d.txt")
+            test "$(grep -vc '^#' "$RUNNER_TEMP/pkg-$d.txt")" -gt 100
+          done
+
       - uses: actions/upload-artifact@v4
         with:
           name: webpulse-linux-x86_64

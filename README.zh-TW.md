@@ -288,7 +288,7 @@ export default {
 
 ### 文字格式的解碼標註
 
-**File ▸ Export ▸ Decoder annotations…** 與 `tools/wp-decode.mjs` 輸出相同的格式：開頭是以 `#` 起始的檔頭，記錄結果的來源；接著每筆標註一行，欄位以 Tab 分隔（所選的列合併後依開始時間排序）；最後是摘要。
+**File ▸ Export ▸ Decoder annotations…** 與 `wp-decode.mjs` 輸出相同的格式：開頭是以 `#` 起始的檔頭，記錄結果的來源；接著每筆標註一行，欄位以 Tab 分隔（所選的列合併後依開始時間排序）；最後是摘要。
 
 ```
 # WebPulse 0.3.1 decoder export
@@ -312,15 +312,15 @@ export default {
 - `text` 為該標註最長的文字，保持在同一行。
 - 若使用自訂解碼器檔案，檔頭會記錄檔名與 CRC-32，可追溯產生結果的解碼器版本。
 
-**不開介面直接解碼：** `tools/wp-decode.mjs` 以 Node.js 18 以上版本，對 `.sr` 檔執行解碼器。需在本專案的原始碼目錄中執行（使用 `web/js/decode/` 的執行環境）：
+**不開介面直接解碼：** Release 壓縮檔中，執行檔旁的 `wp-decode.mjs` 可對 `.sr` 檔執行解碼器。它需要 Node.js 18 以上版本（WebPulse 本身不需要），此外不需要其他檔案：該版本的解碼器執行環境與內建解碼器都已包含在內。自訂解碼器與 WebPulse 相同，放在它旁邊的 `decoders/` 資料夾。
 
 ```bash
-node tools/wp-decode.mjs capture.sr -d uart --opt baud=9600 -o capture-uart.txt
-node tools/wp-decode.mjs capture.sr -d decoders/pwm.js --ch pwm=CH4 --range 10ms:20ms
-node tools/wp-decode.mjs -d spi --list        # 列出解碼器的輸入、選項與標註列
+node wp-decode.mjs capture.sr -d uart --opt baud=9600 -o capture-uart.txt
+node wp-decode.mjs capture.sr -d pwm --ch pwm=CH4 --range 10ms:20ms
+node wp-decode.mjs -d spi --list        # 列出解碼器的輸入、選項與標註列
 ```
 
-輸入與介面相同，依通道名稱自動指派；可用 `--ch INPUT=NAME|CHn` 指定。`--rows a,b` 選擇要輸出的列。解碼器回報錯誤時結束代碼為 2（檔案仍會寫出）。`--help` 可列出所有選項。
+在本專案的原始碼目錄中，請改用 `node tools/wp-decode.mjs`，它會直接使用 `web/js/decode/` 與 `web/decoders/`。輸入與介面相同，依通道名稱自動指派；可用 `--ch INPUT=NAME|CHn` 指定。`--rows a,b` 選擇要輸出的列。解碼器回報錯誤時結束代碼為 2（檔案仍會寫出）。`--help` 可列出所有選項。
 
 ## 從原始碼編譯
 
@@ -379,7 +379,7 @@ web/          網頁介面（純 ES modules，不需建置），編譯時嵌入�
   js/decode/  解碼器執行環境
 decoders/     自訂解碼器範例，編譯時複製到執行檔旁
 tests/        單元測試、解碼器測試、smoke test、瀏覽器測試
-tools/        wp-decode.mjs（不開介面解碼 .sr 檔）、embed_web.py、make_icon.py（由 favicon 產生 Windows 圖示）、package.py（打包 Release）、docshots.mjs（README 截圖）
+tools/        wp-decode.mjs（不開介面解碼 .sr 檔）、embed_web.py、make_icon.py（由 favicon 產生 Windows 圖示）、package.py（打包 Release，並將 wp-decode.mjs 合成為單一檔案）、docshots.mjs（README 截圖）
 cmake/        Windows 交叉編譯工具鏈
 firmware/     fx2lafw-saleae-logic.fw（GPLv2+，執行時載入）
 third_party/  CivetWeb 1.16（MIT）

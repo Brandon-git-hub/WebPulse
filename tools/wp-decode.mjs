@@ -1,25 +1,46 @@
 #!/usr/bin/env node
 // Run a WebPulse protocol decoder on a .sr file without the UI, and write the
 // annotations in the same format as File ▸ Export ▸ Decoder annotations.
-// Needs Node.js 18 or later and this repository (it uses web/js/decode/).
+// Needs Node.js 18 or later.
 //
-//   node tools/wp-decode.mjs capture.sr --decoder uart [-o out.txt]
-//   node tools/wp-decode.mjs capture.sr --decoder decoders/pwm.js \
+//   node wp-decode.mjs capture.sr --decoder uart [-o out.txt]
+//   node wp-decode.mjs capture.sr --decoder decoders/pwm.js \
 //        --opt active=low --ch pwm=CH3 --rows duty --range 10ms:20ms
 //
 // Run with --help for all options.
+//
+// In the repository this file uses web/js/decode/ and web/decoders/. In a
+// release, tools/package.py has put those modules (and the version) into
+// BUNDLE below, so the file runs on its own next to webpulse(.exe), with the
+// user decoders in decoders/ beside it.
 
 import { readFileSync, writeFileSync, statSync, existsSync } from 'node:fs';
 import { inflateRawSync } from 'node:zlib';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const { runDecoder, normalizeOptions } = await import(pathToFileURL(join(ROOT, 'web/js/decode/runtime.js')).href);
-const { exportAnnotations, crc32 } = await import(pathToFileURL(join(ROOT, 'web/js/decode/export.js')).href);
-const { autoAssign, normName } = await import(pathToFileURL(join(ROOT, 'web/js/decode/assign.js')).href);
+// { version, modules: { 'js/decode/runtime.js': source, 'decoders/uart.js': … } }
+// (paths relative to web/); filled in by tools/package.py. Keep this line as is.
+const BUNDLE = null;
 
-const USAGE = `Usage: node tools/wp-decode.mjs FILE.sr --decoder ID|FILE.js [options]
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(HERE, '..');
+const USER_DIR = BUNDLE ? join(HERE, 'decoders') : join(ROOT, 'decoders');
+
+/** A module under web/: from the bundle, else from the repository. */
+function loadWeb(path) {
+  if (!BUNDLE) return import(pathToFileURL(join(ROOT, 'web', path)).href);
+  const src = BUNDLE.modules[path];
+  // sourceURL: errors name the file (uart.js:12), as in the browser.
+  const code = `${src}\n//# sourceURL=webpulse/${path}\n`;
+  return import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
+}
+
+const { runDecoder, normalizeOptions } = await loadWeb('js/decode/runtime.js');
+const { exportAnnotations, crc32 } = await loadWeb('js/decode/export.js');
+const { autoAssign, normName } = await loadWeb('js/decode/assign.js');
+
+const USAGE = `Usage: node wp-decode.mjs FILE.sr --decoder ID|FILE.js [options]
 
   -d, --decoder ID|FILE   a built-in decoder (uart, spi, i2c, parallel, counter)
                           or a decoder file (e.g. decoders/pwm.js)
@@ -82,16 +103,16 @@ if (/[\\/]|\.m?js$/.test(args.decoder)) {
   decPath = resolve(args.decoder);
   if (!existsSync(decPath)) fail(`no decoder file ${args.decoder}`);
 } else if (BUILTIN.includes(args.decoder)) {
-  decPath = join(ROOT, 'web/decoders', `${args.decoder}.js`);
+  decPath = `decoders/${args.decoder}.js`;           // under web/
   builtin = true;
-} else if (existsSync(join(ROOT, 'decoders', `${args.decoder}.js`))) {
-  decPath = join(ROOT, 'decoders', `${args.decoder}.js`);
+} else if (existsSync(join(USER_DIR, `${args.decoder}.js`))) {
+  decPath = join(USER_DIR, `${args.decoder}.js`);
 } else {
-  fail(`unknown decoder "${args.decoder}" (built-in: ${BUILTIN.join(', ')}; or give a .js file)`);
+  fail(`unknown decoder "${args.decoder}" (built-in: ${BUILTIN.join(', ')}; your decoders: ${USER_DIR}; or give a .js file)`);
 }
 let def;
 try {
-  def = (await import(pathToFileURL(decPath).href)).default;
+  def = (await (builtin ? loadWeb(decPath) : import(pathToFileURL(decPath).href))).default;
 } catch (e) {
   fail(`cannot load ${decPath}: ${e.message}`);
 }
@@ -268,8 +289,8 @@ let mask = 0;
 for (const c of Object.values(used)) mask |= 1 << c;
 const result = runDecoder(def, options, used, transitions(cap.samples, mask), cap.rate);
 
-let version = 'WebPulse';
-try {
+let version = BUNDLE ? `WebPulse ${BUNDLE.version}` : 'WebPulse';
+if (!BUNDLE) try {
   const v = /project\(webpulse VERSION ([\d.]+)/.exec(readFileSync(join(ROOT, 'CMakeLists.txt'), 'utf8'));
   if (v) version = `WebPulse ${v[1]}`;
 } catch { /* not in the repository */ }

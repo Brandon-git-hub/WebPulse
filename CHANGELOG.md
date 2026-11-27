@@ -8,9 +8,12 @@
   result), one tab-separated line per annotation (all chosen rows merged by
   start time), then the decoder's summary. Rows, and the range (whole
   capture, current view, between cursors A and B), are chosen in a dialog.
-- `tools/wp-decode.mjs`: runs a decoder on a `.sr` file with Node.js, without
-  the UI, and writes the same format (`--opt`, `--ch`, `--rows`, `--range`,
-  `--list`).
+- `wp-decode.mjs`, next to the executable in the release archives: runs a
+  decoder on a `.sr` file with Node.js 18+, without the UI, and writes the
+  same format (`--opt`, `--ch`, `--rows`, `--range`, `--list`). It is one
+  file: `tools/package.py` puts the decoder runtime, the built-in decoders
+  and the version into it. User decoders come from `decoders/` beside it. In
+  the repository, `node tools/wp-decode.mjs` runs the same code from `web/`.
 - Decoder runtime:
   - `d.summary(text)`: lines shown at the bottom of the decoder's settings
     and written at the end of the export. The example `decoders/pwm.js` uses

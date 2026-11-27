@@ -5,15 +5,16 @@
 
 PLATFORM is e.g. win64 (-> .zip with webpulse.exe) or linux-x86_64 (-> .tar.gz).
 The archive holds one top-level folder webpulse-<version>-<platform>/ with the
-executable, firmware/, decoders/ (example user decoders), the READMEs and
-LICENSE. The version is read from CMakeLists.txt; the archive path is printed
-on stdout.
+executable, wp-decode.mjs (see make_wp_decode), firmware/, decoders/
+(example user decoders), the READMEs and LICENSE. The version is read from
+CMakeLists.txt; the archive path is printed on stdout.
 
 With --unpacked the same files are copied straight into OUT_DIR, without an
 archive or the top-level folder: for a CI artifact, which GitHub zips itself
 (an archive inside it would be a zip in a zip). Unpacked files lose the
 executable bit, so this is meant for Windows.
 """
+import json
 import pathlib
 import re
 import shutil
@@ -31,6 +32,26 @@ def version():
     return m.group(1)
 
 
+# Modules under web/ that tools/wp-decode.mjs uses: the decoder runtime and
+# the built-in decoders.
+BUNDLED = ["js/decode/runtime.js", "js/decode/export.js", "js/decode/assign.js"]
+BUNDLE_LINE = "const BUNDLE = null;"
+
+
+def make_wp_decode(path):
+    """tools/wp-decode.mjs as one file that needs nothing from the repository:
+    the modules and the version go into its BUNDLE constant."""
+    web = ROOT / "web"
+    names = BUNDLED + sorted(f"decoders/{f.name}" for f in (web / "decoders").glob("*.js"))
+    bundle = {"version": version(), "modules": {n: (web / n).read_text(encoding="utf-8") for n in names}}
+    src = (ROOT / "tools" / "wp-decode.mjs").read_text(encoding="utf-8")
+    if src.count(BUNDLE_LINE) != 1:
+        sys.exit(f"package.py: '{BUNDLE_LINE}' not found once in tools/wp-decode.mjs")
+    # ensure_ascii: plain ASCII string literals, safe in any JS source.
+    src = src.replace(BUNDLE_LINE, f"const BUNDLE = {json.dumps(bundle, ensure_ascii=True)};")
+    path.write_text(src, encoding="utf-8", newline="\n")
+
+
 def main():
     args = sys.argv[1:]
     unpacked = bool(args) and args[0] == "--unpacked"
@@ -45,7 +66,9 @@ def main():
         sys.exit(f"package.py: {exe} not found")
 
     top = f"webpulse-{version()}-{platform}"
-    files = [(exe, exe.name), (ROOT / "LICENSE", "LICENSE")]
+    wp_decode = build / "wp-decode.mjs"
+    make_wp_decode(wp_decode)
+    files = [(exe, exe.name), (wp_decode, wp_decode.name), (ROOT / "LICENSE", "LICENSE")]
     files += [(f, f.name) for f in sorted(ROOT.glob("README*.md"))]
     files += [(f, f"firmware/{f.name}") for f in sorted((ROOT / "firmware").iterdir()) if f.is_file()]
     files += [(f, f"decoders/{f.name}") for f in sorted((ROOT / "decoders").glob("*.js"))]
@@ -69,7 +92,7 @@ def main():
                 info = t.gettarinfo(src, f"{top}/{name}")
                 info.uid = info.gid = 0
                 info.uname = info.gname = "root"
-                info.mode = 0o755 if src == exe else 0o644
+                info.mode = 0o755 if src in (exe, wp_decode) else 0o644
                 with open(src, "rb") as f:
                     t.addfile(info, f)
     print(path)
