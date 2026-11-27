@@ -3,6 +3,7 @@
 // running them on the current capture in a Web Worker.
 
 import { runDecoder } from './decode/runtime.js';
+import { autoAssign } from './decode/assign.js';
 import { fetchTransitions } from './decode/transitions.js';
 import { tr } from './i18n.js';
 
@@ -66,22 +67,7 @@ export class Decoders {
   add(key, order, names = []) {
     const d = this.def(key);
     if (!d) return null;
-    const assign = {};
-    const used = new Set();
-    const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
-    for (const ch of d.def.channels || []) {
-      const want = [ch.id, ch.name, ...(ch.aliases || [])].map(norm);
-      const hit = names.findIndex((n, c) => !used.has(c) && n && want.includes(norm(n)));
-      assign[ch.id] = hit < 0 ? null : hit;
-      if (hit >= 0) used.add(hit);
-    }
-    for (const ch of d.def.channels || []) {
-      if (assign[ch.id] !== null || (ch.optional && !ch.auto)) continue;
-      const free = order.find((c) => !used.has(c));
-      if (free === undefined) break;
-      assign[ch.id] = free;
-      used.add(free);
-    }
+    const assign = autoAssign(d.def, names, order);
     const options = {};
     for (const o of d.def.options || []) options[o.id] = o.default;
     const n = this.list.filter((i) => i.key === key).length;

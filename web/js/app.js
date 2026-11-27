@@ -5,6 +5,8 @@
 import { formatFreq, formatRate, formatSI, formatTime, parseSI } from './format.js';
 import { CHANNELS, DEC_ROW_H, RULER_H, ROW_H, Renderer, loadTheme } from './renderer.js';
 import { Decoders, PALETTE } from './decoders.js';
+import { crc32, exportAnnotations } from './decode/export.js';
+import { normalizeOptions } from './decode/runtime.js';
 import { LANGUAGES, applyI18n, getLang, setLang, tr } from './i18n.js';
 import { Viewport } from './viewport.js';
 
@@ -89,6 +91,8 @@ const app = {
   device: null,
   status: null,
   capKey: null,
+  cap: null,          // the capture shown (from the status): n, rate, source, time, …
+  opened: null,       // { name, modified } of the last file opened here
   ws: null,
   wsRetry: 500,
 };
@@ -457,6 +461,8 @@ function syncDecoders(structure = true) {
   }
   if (decPop.inst && !decoders.list.includes(decPop.inst)) showDecoderSettings(null);
   else if (decPop.inst) placeDecoderSettings();
+  updateExportLinks();
+  if (dialogOpen('dec-export-dialog')) updateDecoderExport();
 }
 
 function chLabel(c) {
@@ -706,6 +712,13 @@ function updateDecoderSettingsStatus() {
   el.textContent = st.status === 'error' ? st.error
     : st.status === 'running' ? tr('Decoding…')
     : vp.capture ? '' : tr('Decodes after the next capture.');
+  // The decoder's d.summary() lines, if any.
+  const lines = (st.status === 'done' || st.status === 'error') && st.result ? st.result.summary || [] : [];
+  const pre = $('dec-pop').querySelector('.summary');
+  const head = $('dec-pop').querySelector('.summary-head');
+  if (!pre || !head) return;
+  pre.textContent = lines.join('\n');
+  pre.hidden = head.hidden = !lines.length;
 }
 
 function fillDecoderSettings(inst) {
@@ -794,6 +807,8 @@ function fillDecoderSettings(inst) {
     }
     if (d.def.channels.some((c) => !c.optional)) pop.appendChild(el('p', { className: 'note', textContent: tr('* Required channels') }));
   }
+  pop.appendChild(el('div', { className: 'sec summary-head', textContent: tr('Summary'), hidden: true }));
+  pop.appendChild(el('pre', { className: 'summary', hidden: true }));
 
   const btns = el('div', { className: 'btns' });
   const del = el('button', { type: 'button', className: 'del', textContent: tr('Remove decoder') });
@@ -1338,7 +1353,7 @@ function renderShortcuts() {
   }
 }
 
-const DIALOGS = ['keys-dialog', 'about-dialog'];
+const DIALOGS = ['keys-dialog', 'about-dialog', 'dec-export-dialog'];
 
 function dialogOpen(id) {
   const dlg = $(id);
@@ -1441,6 +1456,7 @@ function browserName() {
 function updateExportLinks() {
   const has = !!vp.capture;
   $('export-png').disabled = !has;
+  $('export-dec').disabled = !has || !decoders.list.length;
   $('export-btn').disabled = !has;
   const names = encodeURIComponent(channels.map((c) => c.name.replace(/,/g, '_')).join(','));
   const on = channels.flatMap((c, i) => (c.enabled ? [i] : []));
@@ -1491,6 +1507,7 @@ function onStatus(st) {
     }
   } else if (!cap && vp.capture) {
     app.capKey = null;
+    app.cap = null;
     vp.capture = null;
     query.reset();
     renderer.clearData();
@@ -1528,6 +1545,7 @@ function showDevice(d) {
 async function openFile(file) {
   if (!file) return;
   toast(tr('Opening {name}…', { name: file.name }), 'info');
+  app.opened = { name: file.name, modified: Math.floor((file.lastModified || 0) / 1000) };
   try {
     const r = await fetch(`api/open?name=${encodeURIComponent(file.name)}`, {
       method: 'POST',
@@ -1568,6 +1586,7 @@ function showCapture(cap) {
   renderer.cursors = { a: null, b: null };
   $('empty').hidden = true;
   if (Array.isArray(cap.names)) applyFileChannels(cap.names);
+  app.cap = cap;
   vp.setCapture({ n: cap.n, rate: cap.rate, trigger_pos: cap.trigger_pos });
   updateChannelPicker();
   updateExportLinks();
@@ -1959,15 +1978,168 @@ function exportPng() {
       toast(tr('Could not create the image'));
       return;
     }
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    download(blob, name);
   }, 'image/png');
+}
+
+function download(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// ---- File ▸ Export ▸ Decoder annotations ---------------------------------------------------
+// One decoder's annotations as text (format: js/decode/export.js), the same
+// as tools/wp-decode.mjs writes.
+
+const decExport = { uid: null, rows: new Map() };    // rows: "uid:row" -> checked
+
+function buildDecoderExport() {
+  $('export-dec').addEventListener('click', () => {
+    closeMenus();
+    updateDecoderExport();
+    showDialog('dec-export-dialog', true);
+  });
+  $('dx-dec').addEventListener('change', () => {
+    decExport.uid = Number($('dx-dec').value);
+    updateDecoderExport();
+  });
+  $('dx-cancel').addEventListener('click', () => showDialog('dec-export-dialog', false));
+  $('dx-form').addEventListener('change', (ev) => {
+    if (ev.target.name === 'dx-row') decExport.rows.set(ev.target.value, ev.target.checked);
+    updateDecoderExportInfo();
+  });
+  $('dx-form').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    exportDecoder().catch((e) => toast(e.message));
+  });
+}
+
+/** The decoder picked in the dialog, its module and decoding state. */
+function decoderExportTarget() {
+  const inst = decoders.list.find((i) => i.uid === decExport.uid) || decoders.list[0];
+  if (!inst) return null;
+  return { inst, d: decoders.def(inst.key), st: decoders.state.get(inst.uid) || {} };
+}
+
+function updateDecoderExport() {
+  const t = decoderExportTarget();
+  const sel = $('dx-dec');
+  sel.textContent = '';
+  for (const inst of decoders.list) sel.appendChild(new Option(inst.label, String(inst.uid)));
+  if (t) {
+    decExport.uid = t.inst.uid;
+    sel.value = String(t.inst.uid);
+  }
+  const box = $('dx-rows');
+  box.textContent = '';
+  for (const r of (t && t.d && t.d.def.rows) || []) {
+    const key = `${t.inst.uid}:${r.id}`;
+    const lab = document.createElement('label');
+    const cb = Object.assign(document.createElement('input'), { type: 'checkbox', name: 'dx-row', value: key });
+    // Rows marked export: false (e.g. one annotation per bit) start unchecked.
+    cb.checked = decExport.rows.has(key) ? decExport.rows.get(key) : r.export !== false;
+    lab.append(cb, ' ', r.name);
+    box.appendChild(lab);
+  }
+  const c = renderer.cursors;
+  const both = c.a !== null && c.b !== null && c.a !== c.b;
+  $('dx-range-cursors').disabled = !both;
+  $('dx-range-cursors').parentElement.classList.toggle('off', !both);
+  if (!both && $('dx-range-cursors').checked) $('dx-form').elements['dx-range'].value = 'all';
+  updateDecoderExportInfo();
+}
+
+/** [first, end) samples for the chosen range, or null for all. */
+function decoderExportRange() {
+  const n = vp.capture ? vp.capture.n : 0;
+  const which = $('dx-form').elements['dx-range'].value;
+  if (which === 'view') return [Math.max(0, Math.floor(vp.start)), Math.min(n, Math.ceil(vp.end))];
+  if (which === 'cursors') {
+    const { a, b } = renderer.cursors;
+    if (a !== null && b !== null) return [Math.round(Math.min(a, b)), Math.round(Math.max(a, b))];
+  }
+  return null;
+}
+
+function checkedExportRows(t) {
+  return [...$('dx-rows').querySelectorAll('input:checked')].map((cb) => cb.value.slice(String(t.inst.uid).length + 1));
+}
+
+function updateDecoderExportInfo() {
+  const t = decoderExportTarget();
+  const info = $('dx-info');
+  let msg = '', err = false;
+  if (!t || !t.d) { msg = tr('This decoder is not available (any more).'); err = true; }
+  else if (t.st.status === 'running') msg = tr('Decoding…');
+  else if (!t.st.result) { msg = t.st.error || tr('No result yet.'); err = true; }
+  else {
+    const range = decoderExportRange();
+    let count = 0;
+    for (const id of checkedExportRows(t)) {
+      const r = t.st.result.rows[id];
+      if (!r) continue;
+      if (!range) count += r.start.length;
+      else for (let i = 0; i < r.start.length; i++) if (r.start[i] >= range[0] && r.start[i] < range[1]) count++;
+    }
+    msg = tr('{n} annotations', { n: count.toLocaleString() });
+    if (t.st.error) { msg += ' · ' + t.st.error; err = true; }
+  }
+  info.textContent = msg;
+  info.classList.toggle('err', err);
+  $('dx-ok').disabled = !(t && t.d && t.st.result && t.st.status !== 'running');
+}
+
+async function exportDecoder() {
+  const t = decoderExportTarget();
+  if (!t || !t.d || !t.st.result) return;
+  const { inst, d, st } = t;
+  const builtin = d.source === 'built-in';
+  let crc = '';
+  if (!builtin) {
+    // Which version of the file decoded this: its CRC now (decoding re-reads it on Reload).
+    try { crc = crc32(await (await fetch(d.url)).text()); } catch { /* left out */ }
+  }
+  const cap = app.cap || {};
+  const file = cap.source || '';
+  const fromHere = file && app.opened && app.opened.name === file && app.opened.modified;
+  const version = app.device && app.device.version ? `WebPulse ${app.device.version}` : 'WebPulse';
+  const chunks = exportAnnotations({
+    version,
+    capture: {
+      source: file,
+      time: fromHere ? app.opened.modified : cap.time || 0,
+      timeKind: fromHere ? 'modified' : 'opened',
+      rate: vp.capture.rate,
+      n: vp.capture.n,
+      trigger_pos: vp.capture.trigger_pos,
+    },
+    decoder: builtin ? { id: d.def.id || d.name, builtin: true }
+      : { id: d.def.id || d.key.replace(/^user:|\.m?js$/g, ''), file: d.key.replace(/^user:/, ''), crc },
+    channels: d.def.channels.map((c) => {
+      const ch = inst.assign[c.id];
+      return [c.id, ch === null || ch === undefined || ch === '' ? '' : channels[Number(ch)].name];
+    }),
+    options: normalizeOptions(d.def, inst.options),
+    rows: checkedExportRows(t),
+    result: st.result,
+    range: decoderExportRange(),
+  });
+  const base = file ? file.replace(/\.sr$/i, '') : `webpulse-${stamp(cap.time ? new Date(cap.time * 1000) : new Date())}`;
+  const safe = inst.label.replace(/[^\w.-]+/g, '_');
+  download(new Blob(chunks, { type: 'text/plain' }), `${base}-${safe}.txt`);
+  showDialog('dec-export-dialog', false);
+}
+
+/** 20261127-114619 */
+function stamp(d) {
+  const p2 = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`;
 }
 
 function updateViewInfo() {
@@ -1990,6 +2162,7 @@ async function init() {
   buildMenus();
   buildDecoderDock();
   buildDecoderSettings();
+  buildDecoderExport();
   document.documentElement.style.setProperty('--dec-row-h', DEC_ROW_H + 'px');
   decoders.loadDefs().then(renderDecoderCatalog);
   for (const id of ['samples', 'pre', 'timeout']) {

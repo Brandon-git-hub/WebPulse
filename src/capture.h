@@ -67,7 +67,8 @@ wp_device *wp_engine_device(wp_engine *e);
  * like a device note. Fails while a capture runs.
  */
 int wp_engine_load(wp_engine *e, uint8_t *raw, uint64_t n, uint64_t rate, int64_t trigger_pos,
-                   const char names[8][32], const char *note, char *err, size_t errlen);
+                   const char names[8][32], const char *source, const char *note,
+                   char *err, size_t errlen);
 
 /* Returns a referenced store or NULL; release with wp_store_unref(). */
 wp_store *wp_engine_store(wp_engine *e);

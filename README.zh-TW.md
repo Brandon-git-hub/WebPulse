@@ -53,7 +53,7 @@ WebPulse 隨附 fx2lafw 韌體，每次開啟裝置時會將韌體載入裝置�
 - **長時間擷取依然流暢：** 瀏覽器僅向伺服器請求目前檢視範圍的資料，每次回應約為每像素 2 bytes，與擷取長度無關；即使是 2.56 億個取樣點，也能在 1 ms 內回應。
 - **量測：** 游標會自動吸附訊號邊緣；滑鼠所在的脈衝會即時量測高準位時間、低準位時間、週期、頻率與工作週期（Duty Cycle）。
 - **協定解碼：** 內建 UART、SPI、I²C、並列匯流排與邊緣計數器，也能以 JavaScript 撰寫自訂解碼器。
-- **檔案：** 可開啟與儲存 sigrok / PulseView 工作階段檔（`.sr`），並可匯出 VCD、CSV、PNG。
+- **檔案：** 可開啟與儲存 sigrok / PulseView 工作階段檔（`.sr`），並可匯出 VCD、CSV、PNG，以及文字格式的解碼標註。
 - **部署簡單：** 單一執行檔即包含完整介面，Windows 版不需要額外安裝 DLL。內建模擬裝置，沒有硬體也能體驗所有功能。
 
 從整段擷取逐步放大至單一位元組，接著放置游標並進行量測：
@@ -165,6 +165,7 @@ xattr -dr com.apple.quarantine .
 | **Save session**（Ctrl+S） | 儲存為 PulseView 可開啟的工作階段檔（`.sr`），包含通道名稱，且只包含目前顯示的通道 |
 | **Export ▸ VCD / CSV** | 將擷取資料匯出為 VCD 或 CSV 檔，只包含目前顯示的通道 |
 | **Export ▸ PNG image** | 將目前畫面存成圖片，包含通道名稱與解碼標註 |
+| **Export ▸ Decoder annotations…** | 將單一解碼器的標註存成文字檔，可選擇要匯出的列與範圍（整份擷取資料、目前畫面，或游標 A 與 B 之間）。格式請參閱[文字格式的解碼標註](#文字格式的解碼標註) |
 
 ## 命令列
 
@@ -225,6 +226,7 @@ WebPulse 0.3.1 listening on port 9002  (Ctrl+C to quit)
 - 新增解碼器時，會依通道名稱自動指派輸入。例如命名為 `SCLK` 的通道會指派給 SPI 的 CLK，命名為 `SDA` 的通道會指派給 I²C 的 SDA。
 - 點選解碼器的列名稱可開啟設定：名稱、顏色、通道與選項。每項修改都會立即套用並重新解碼；最下方為 **Remove decoder**（移除解碼器）。
 - 將滑鼠移至協定解碼標註上，狀態列會顯示完整內容。
+- 解碼器可以輸出摘要（例如時序檢查的總表）。摘要顯示在解碼器設定的最下方，匯出標註時也會寫在檔案最後。
 - 解碼器在瀏覽器中執行，且只處理所使用通道的訊號轉換點，因此即使是 2.56 億個取樣點的擷取，也約在一秒內完成解碼。
 
 ### 撰寫自訂解碼器
@@ -261,7 +263,11 @@ export default {
 | `auto: true` | 新增解碼器時，也自動指派此選用輸入 |
 | `aliases: ['sck']` | 可對應此輸入的其他通道名稱 |
 
-**解碼流程：** `decode` 是一個 generator 函式。`yield d.wait(cond)` 會等待下一個符合 `cond` 的取樣點，並回傳其取樣點索引。等待一律向後推進：在目前取樣點已成立的條件不會被視為符合。若直到擷取結束都沒有符合的取樣點，解碼即停止；`finally` 區塊中的程式碼仍會執行，可用於結束持續到最後的標註。
+標註列可加上 `export: false`（例如 `{ id: 'bits', name: 'Bits', export: false }`），匯出標註時這一列預設不勾選，適合筆數非常多的列。
+
+**解碼流程：** `decode` 是一個 generator 函式。`yield d.wait(cond)` 會等待下一個符合 `cond` 的取樣點，並回傳其取樣點索引。等待一律向後推進：在目前取樣點已成立的條件不會被視為符合。若直到擷取結束都沒有符合的取樣點，解碼即停止；`finally` 區塊中的程式碼仍會執行，可用於結束持續到最後的標註或輸出摘要，其中拋出的錯誤也會和其他錯誤一樣顯示。
+
+標註可以依任意順序加入，每一列最後都會依開始時間排序。預設值為數字的選項會以數字傳入（直接用 `o.gap`，不需 `Number(o.gap)`）；已儲存的設定中缺少的選項會使用預設值。
 
 | API | 說明 |
 |---|---|
@@ -270,12 +276,51 @@ export default {
 | `{ skip: n }` | 往後 n 個取樣點（可為小數） |
 | `d.until(s)` | 取樣點索引 s |
 | `d.pins.rx` | 目前取樣點該通道的準位（0 或 1） |
+| `d.prev.rx` | 目前取樣點前一刻的準位，例如時脈邊緣前一刻的資料線 |
 | `d.samplenum` / `d.rate` / `d.n` | 目前取樣點索引、取樣率（Hz）、擷取的總取樣點數 |
 | `d.has('cs')` | 選用輸入是否已指派 |
 | `d.put(start, end, row, texts)` | 新增一筆標註；`texts` 可為字串，或由長到短排列的陣列，會依顯示空間自動選用最長的文字 |
+| `d.us(samples)`、`d.ms(samples)` | 將取樣點數換算為微秒／毫秒 |
+| `d.summary(text)` | 在解碼器摘要中加入文字（顯示於設定視窗，並寫入匯出檔） |
 | `d.hex(v, bits)`、`d.bin`、`d.dec`、`d.oct`、`d.ascii(v)`、`d.format(v, bits, 'hex')` | 數值格式化函式 |
 
 解碼器拋出的錯誤會連同檔名與行號顯示在該解碼器的列上，錯誤發生前產生的標註會保留。
+
+### 文字格式的解碼標註
+
+**File ▸ Export ▸ Decoder annotations…** 與 `tools/wp-decode.mjs` 輸出相同的格式：開頭是以 `#` 起始的檔頭，記錄結果的來源；接著每筆標註一行，欄位以 Tab 分隔（所選的列合併後依開始時間排序）；最後是摘要。
+
+```
+# WebPulse 0.3.1 decoder export
+# capture   uart.sr  (modified 2026-11-27 11:46:13)
+# rate      1000000 Hz, 200000 samples, no trigger
+# decoder   uart  (built-in)
+# channels  rx=CH0
+# options   baud=115200 bits=8 parity=none stop=1 order=lsb-first invert=no format=ascii
+# rows      data error
+# range     all
+# result    2026 annotations, 12 ms, no error
+#
+# start_ms	len_ms	sample	row	text
+1.763	0.087	1763	data	'H' 48
+1.849	0.087	1849	data	'e' 65
+## summary
+…
+```
+
+- 時間以毫秒為單位，從取樣點 0 起算，與 VCD、CSV 匯出一致；觸發位置記錄在檔頭，`sample` 為精確的起始取樣點索引。
+- `text` 為該標註最長的文字，保持在同一行。
+- 若使用自訂解碼器檔案，檔頭會記錄檔名與 CRC-32，可追溯產生結果的解碼器版本。
+
+**不開介面直接解碼：** `tools/wp-decode.mjs` 以 Node.js 18 以上版本，對 `.sr` 檔執行解碼器。需在本專案的原始碼目錄中執行（使用 `web/js/decode/` 的執行環境）：
+
+```bash
+node tools/wp-decode.mjs capture.sr -d uart --opt baud=9600 -o capture-uart.txt
+node tools/wp-decode.mjs capture.sr -d decoders/pwm.js --ch pwm=CH4 --range 10ms:20ms
+node tools/wp-decode.mjs -d spi --list        # 列出解碼器的輸入、選項與標註列
+```
+
+輸入與介面相同，依通道名稱自動指派；可用 `--ch INPUT=NAME|CHn` 指定。`--rows a,b` 選擇要輸出的列。解碼器回報錯誤時結束代碼為 2（檔案仍會寫出）。`--help` 可列出所有選項。
 
 ## 從原始碼編譯
 
@@ -313,7 +358,7 @@ cmake --build build/win        # 產生 build/win/webpulse.exe 與 build/win/fir
 | 測試 | 涵蓋範圍 |
 |---|---|
 | `ctest` | C 單元測試：觸發、資料儲存、FX2 協定、JSON、擷取引擎、VCD / CSV 匯出、ZIP / `.sr` 讀寫；找得到 Node.js 時也會執行解碼器測試 |
-| `tests/decoders_test.mjs` | 以程式產生的波形驗證解碼器執行環境與內建解碼器 |
+| `tests/decoders_test.mjs` | 以程式產生的波形驗證解碼器執行環境、標註匯出與內建解碼器 |
 | `tests/web_smoke.mjs` | 在 Node 22+ 中以模擬 DOM 執行 `web/js/app.js`，並連線至執行中的伺服器 |
 | `tests/browser_check.mjs` | 以 headless Chrome（`$CHROME` 或 `chromium`）操作介面：檢查版面對齊、解碼器在 Web Worker 中執行、無 JavaScript 錯誤 |
 | `tools/docshots.mjs` | 重新產生 `docs/images` 中的 README 截圖 |
@@ -334,7 +379,7 @@ web/          網頁介面（純 ES modules，不需建置），編譯時嵌入�
   js/decode/  解碼器執行環境
 decoders/     自訂解碼器範例，編譯時複製到執行檔旁
 tests/        單元測試、解碼器測試、smoke test、瀏覽器測試
-tools/        embed_web.py、make_icon.py（由 favicon 產生 Windows 圖示）、package.py（打包 Release）、docshots.mjs（README 截圖）
+tools/        wp-decode.mjs（不開介面解碼 .sr 檔）、embed_web.py、make_icon.py（由 favicon 產生 Windows 圖示）、package.py（打包 Release）、docshots.mjs（README 截圖）
 cmake/        Windows 交叉編譯工具鏈
 firmware/     fx2lafw-saleae-logic.fw（GPLv2+，執行時載入）
 third_party/  CivetWeb 1.16（MIT）
@@ -347,7 +392,7 @@ third_party/  CivetWeb 1.16（MIT）
 | GET | `/api/device` | 後端類型、型號、韌體、`connected`（是否已連接）、支援的取樣率、最大取樣點數；版本、建置日期、作業系統、CivetWeb 與 libusb 版本（供 Help ▸ About 使用） |
 | POST | `/api/capture` | 開始擷取：`{"rate":24000000,"samples":10000000,"pre":0.1,"trigger":"XXXXXXXR","timeout_ms":0}` |
 | POST | `/api/stop` | 停止擷取；觸發後已擷取的資料會保留 |
-| GET | `/api/status` | 狀態（`idle` / `armed` / `capturing` / `processing` / `done` / `error`）與進度；`capture.changing` 為有訊號變化的通道遮罩 |
+| GET | `/api/status` | 狀態（`idle` / `armed` / `capturing` / `processing` / `done` / `error`）與進度；`capture.changing` 為有訊號變化的通道遮罩，`capture.time` 為擷取或開啟的時間（Unix time），`capture.source` 為開啟的檔名 |
 | GET | `/api/export?fmt=vcd\|csv\|sr[&names=a,b,…][&channels=0-3,6][&changes=0]` | 下載擷取資料；`channels` 指定要包含的通道（預設為全部） |
 | POST | `/api/open?name=FILE.sr` | 請求內容為 sigrok 工作階段檔，載入後成為目前的擷取 |
 | GET | `/api/transitions?mask=M[&from=S]` | 遮罩 `M` 中的通道發生變化的取樣點索引，二進位格式；供解碼器使用（格式見 `src/server.c` 的 `api_transitions`） |

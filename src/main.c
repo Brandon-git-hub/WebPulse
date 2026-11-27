@@ -315,6 +315,16 @@ static int write_output(const wp_store *store, const options *o, const char *con
     return rc == 0 ? 0 : 1;
 }
 
+/* The file name part of a path ("a/b/c.sr" -> "c.sr"; also after '\\'). */
+static const char *path_basename(const char *p)
+{
+    const char *b = p;
+    for (; *p; p++)
+        if (*p == '/' || *p == '\\')
+            b = p + 1;
+    return b;
+}
+
 /* Read a whole .sr file and parse it. */
 static int load_sr(const char *path, uint64_t max_samples, wp_sr_capture *c)
 {
@@ -814,7 +824,8 @@ int main(int argc, char **argv)
             }
             snprintf(note, sizeof(note), "opened %s", o.open);
             if (wp_engine_load(e, c.raw, c.n, c.rate, c.trigger_pos,
-                               (const char (*)[32])c.names, note, err, sizeof(err)) < 0)
+                               (const char (*)[32])c.names, path_basename(o.open), note,
+                               err, sizeof(err)) < 0)
                 fprintf(stderr, "webpulse: %s\n", err);
         }
         rc = run_server(e, &o);

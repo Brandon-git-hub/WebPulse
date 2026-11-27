@@ -2,6 +2,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 static int build_level(wp_store_level *dst, const uint8_t *src_pairs, const uint8_t *raw,
                        uint64_t src_n, uint64_t block)
@@ -52,6 +53,7 @@ wp_store *wp_store_new(uint8_t *raw, uint64_t n, uint64_t rate, int64_t trigger_
     s->n = n;
     s->rate = rate;
     s->trigger_pos = trigger_pos;
+    s->time = (int64_t)time(NULL);
 
     /* Build levels until a level has a single block. */
     while (src_n > 1 && s->nlevels < WP_STORE_MAX_LEVELS) {

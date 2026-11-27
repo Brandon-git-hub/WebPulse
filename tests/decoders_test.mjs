@@ -2,6 +2,13 @@
 // generated here (no server needed):  node tests/decoders_test.mjs
 
 import { runDecoder } from '../web/js/decode/runtime.js';
+import { crc32, exportAnnotations } from '../web/js/decode/export.js';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { deflateRawSync } from 'node:zlib';
 import uart from '../web/decoders/uart.js';
 import spi from '../web/decoders/spi.js';
 import i2c from '../web/decoders/i2c.js';
@@ -176,6 +183,7 @@ for (const mode of [0, 1, 2, 3]) {
   const r = run(pwm, {}, { pwm: 0 }, w.samples(), 1e6);
   check(r.rows.duty.text.map((t) => t[0]).join(' | ') === '25.0 % · 10.000 kHz | 50.0 % · 10.000 kHz | 75.0 % · 10.000 kHz',
     `PWM example (${r.rows.duty.text.map((t) => t[0]).join(' | ')})`);
+  check(r.summary.join() === '3 periods, duty 25.0 … 75.0 %', `PWM example summary (${r.summary.join()})`);
 }
 
 // ---- runtime errors -----------------------------------------------------------------
@@ -187,6 +195,170 @@ for (const mode of [0, 1, 2, 3]) {
   const t = runDecoder(thrower, {}, { a: 0 }, transitions(s, 1), 1e6);
   check(/boom/.test(t.error) && t.rows.x.start.length === 1, 'decoder exception keeps earlier annotations');
   check(/^boom \(decoders_test\.mjs:\d+\)$/.test(t.error), `error shown as message and location (${t.error})`);
+}
+
+// ---- runtime helpers ------------------------------------------------------------------
+{
+  const s = new Wave().set(1, 0).hold(10).set(1, 1).hold(10).set(1, 0).hold(10).samples();
+  const tr1 = () => transitions(s, 1);
+
+  // finally: an error there is reported, and annotations put there are kept.
+  const fin = { rows: [{ id: 'x' }], *decode(d) {
+    try { for (;;) yield d.wait({ a: 'e' }); } finally { d.put(0, 1, 'x', 'end'); throw new Error('flush failed'); }
+  } };
+  const f = runDecoder(fin, {}, { a: 0 }, tr1(), 1e6);
+  check(/^flush failed \(decoders_test\.mjs:\d+\)$/.test(f.error || '') && f.rows.x.start.length === 1,
+    `error in finally reported (${f.error})`);
+  const yielder = { rows: [{ id: 'x' }], *decode(d) { try { for (;;) yield d.wait({ a: 'e' }); } finally { yield d.wait({ a: 'e' }); } } };
+  check(/must not yield/.test(runDecoder(yielder, {}, { a: 0 }, tr1(), 1e6).error || ''), 'yield in finally reported');
+
+  // Annotations put out of order come back sorted by start (then end).
+  const unsorted = { rows: [{ id: 'x' }], *decode(d) {
+    d.put(20, 25, 'x', 'c'); d.put(5, 9, 'x', 'b'); d.put(5, 6, 'x', 'a'); d.put(20, 25, 'x', 'd');
+  } };
+  const u = runDecoder(unsorted, {}, { a: 0 }, tr1(), 1e6);
+  check(texts(u, 'x').join('') === 'abcd' && u.rows.x.start.join(',') === '5,5,20,20', `rows sorted (${texts(u, 'x').join('')})`);
+
+  // d.prev: the level just before the current sample.
+  const seen = [];
+  const prev = { rows: [{ id: 'x' }], *decode(d) {
+    for (;;) { yield d.wait({ a: 'e' }); seen.push(`${d.prev.a}${d.pins.a}`); }
+  } };
+  runDecoder(prev, {}, { a: 0 }, tr1(), 1e6);
+  check(seen.join(' ') === '01 10', `d.prev before each edge (${seen.join(' ')})`);
+  const skipSeen = [];
+  const prevSkip = { rows: [{ id: 'x' }], *decode(d) {
+    yield d.until(15); skipSeen.push(`${d.prev.a}${d.pins.a}`);
+    yield d.until(20); skipSeen.push(`${d.prev.a}${d.pins.a}`);
+  } };
+  runDecoder(prevSkip, {}, { a: 0 }, tr1(), 1e6);
+  check(skipSeen.join(' ') === '11 10', `d.prev away from and at an edge (${skipSeen.join(' ')})`);
+
+  // d.us / d.ms, d.summary, option normalisation.
+  let got = null;
+  const misc = { rows: [{ id: 'x' }],
+    options: [{ id: 'gap', default: 300 }, { id: 'mode', default: 'a' }, { id: 'missing', default: 7 }],
+    *decode(d, o) {
+      got = { us: d.us(12), ms: d.ms(6000), o };
+      d.summary('PASS one\nFAIL two');
+      d.summary('three');
+    } };
+  const m = runDecoder(misc, { gap: '250', mode: '5' }, { a: 0 }, tr1(), 12e6);
+  check(got.us === 1 && got.ms === 0.5, `d.us / d.ms (${got.us}, ${got.ms})`);
+  check(got.o.gap === 250 && got.o.mode === '5' && got.o.missing === 7,
+    `options: numbers for number defaults, defaults filled in (${JSON.stringify(got.o)})`);
+  check(m.summary.join('|') === 'PASS one|FAIL two|three' && typeof m.ms === 'number', `d.summary lines (${m.summary.join('|')})`);
+  const bad = runDecoder(misc, { gap: 'x' }, { a: 0 }, tr1(), 12e6);
+  check(bad.error === null && got.o.gap === 'x', 'a non-numeric value is passed as given');
+}
+
+// ---- annotation export ----------------------------------------------------------------
+{
+  check(crc32('123456789') === 'cbf43926', 'CRC-32 check value');
+  const s = new Wave().hold(100).samples();
+  const dec = { rows: [{ id: 'op' }, { id: 'bits', export: false }, { id: 'warn' }], *decode(d) {
+    d.put(50, 60, 'warn', 'late\tone');
+    d.put(10, 20, 'op', ['long text | more', 'short']);
+    d.put(10, 15, 'warn', 'early');
+    d.put(12, 13, 'bits', '1');
+    d.summary('PASS all');
+  } };
+  const result = runDecoder(dec, {}, { a: 0 }, transitions(s, 1), 12e6);
+  const base = {
+    version: 'WebPulse 9.9', decoder: { id: 'x', file: 'x.js', crc: 'deadbeef' },
+    capture: { source: '', time: 0, rate: 12e6, n: 100, trigger_pos: 40 },
+    channels: [['a', 'CLK'], ['b', '']], options: { gap: 300, name: 'two words' }, rows: ['op', 'warn'], result,
+  };
+  const txt = exportAnnotations(base).join('');
+  const lines = txt.split('\n');
+  const body = lines.filter((l) => l && !l.startsWith('#'));
+  const headOk = lines[0] === '# WebPulse 9.9 decoder export' && txt.includes('# capture   live capture\n') &&
+    txt.includes('# rate      12000000 Hz, 100 samples, trigger at sample 40') &&
+    txt.includes('# decoder   x  (x.js, crc32 deadbeef)') && txt.includes('# channels  a=CLK b=-') &&
+    txt.includes('# options   gap=300 name="two words"') && txt.includes('# rows      op warn') &&
+    txt.includes('# result    4 annotations (3 exported),');
+  check(headOk, 'export header' + (headOk ? '' : `\n${lines.slice(0, 11).join('\n')}`));
+  check(body.slice(0, 3).join('|') ===
+    '0.00083\t0.00042\t10\twarn\tearly|0.00083\t0.00083\t10\top\tlong text | more|0.00417\t0.00083\t50\twarn\tlate one',
+    `export lines sorted by start, then end; longest text; tabs removed (${body.slice(0, 3).join('|')})`);
+  check(txt.endsWith('## summary\nPASS all\n'), 'export ends with the summary');
+  const ranged = exportAnnotations({ ...base, range: [11, 60] }).join('').split('\n').filter((l) => l && !l.startsWith('#'));
+  check(ranged.length === 2 && ranged[0].includes('\t50\t') && ranged[1] === 'PASS all', `export range: annotations starting in it (${ranged.join('|')})`);
+}
+
+// ---- tools/wp-decode.mjs on a .sr file --------------------------------------------------
+{
+  // A sigrok session: UART "Hi" on CH2 (named TX), stored and deflated members.
+  const rate = 1e6, bit = rate / 9600;
+  const w = new Wave().set(4, 1).hold(300);
+  for (const c of 'Hi') {
+    const v = c.charCodeAt(0);
+    w.set(4, 0).hold(bit);
+    for (let i = 0; i < 8; i++) w.set(4, (v >> i) & 1).hold(bit);
+    w.set(4, 1).hold(bit * 3);
+  }
+  const meta = '[global]\nsigrok version=0.5.2\n\n[device 1]\ncapturefile=logic-1\ntotal probes=8\n' +
+    'samplerate=1 MHz\nprobe1=CLK\nprobe3=TX\nunitsize=1\n';
+  const dir = mkdtempSync(join(tmpdir(), 'wp-decode-'));
+  try {
+    const file = join(dir, 'uart.sr');
+    writeFileSync(file, zip([['version', '2', false], ['metadata', meta, false], ['logic-1-1', w.samples(), true],
+      ['webpulse', 'trigger_pos=300\n', false]]));
+    const cli = (...args) => spawnSync(process.execPath, [fileURLToPath(new URL('../tools/wp-decode.mjs', import.meta.url)), ...args],
+      { encoding: 'utf8' });
+    let r = cli(file, '-d', 'uart', '--opt', 'baud=9600', '--opt', 'format=ascii', '--ch', 'rx=TX');
+    const data = r.stdout.split('\n').filter((l) => /\tdata\t/.test(l)).map((l) => l.split('\t')[4]);
+    check(r.status === 0 && data.join(' ') === "'H' 48 'i' 69" && r.stdout.includes('# capture   uart.sr  (modified ') &&
+      r.stdout.includes('# rate      1000000 Hz, ' + w.n + ' samples, trigger at sample 300') &&
+      r.stdout.includes('# channels  rx=TX\n'), `wp-decode on a .sr file (${r.status}: ${data.join(' ')} ${r.stderr})`);
+    r = cli(file, '-d', 'uart', '--opt', 'baud=9600', '--range', '0:1ms');
+    check(r.status === 0 && r.stdout.includes('# result    2 annotations (1 exported)'), `wp-decode --range (${r.stderr}${r.stdout.split('\n')[8]})`);
+    r = cli(file, '-d', 'uart', '--ch', 'rx=-');
+    check(r.status === 1 && /assign rx with --ch/.test(r.stderr), `wp-decode: a required input left unassigned (${r.stderr.trim()})`);
+    r = cli(file, '-d', 'uart', '--opt', 'baud=400000');
+    check(r.status === 2 && /too slow/.test(r.stderr) && r.stdout.includes('error: '), 'wp-decode: decoder error, exit status 2');
+    r = cli(file, '-d', 'uart', '--opt', 'nope=1');
+    check(r.status === 1 && /no option "nope"/.test(r.stderr), 'wp-decode rejects an unknown option');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** A zip file of [name, string | Uint8Array, deflate?] members. */
+function zip(members) {
+  const parts = [], dirs = [];
+  let off = 0;
+  for (const [name, content, deflate] of members) {
+    const raw = typeof content === 'string' ? Buffer.from(content) : Buffer.from(content);
+    const data = deflate ? deflateRawSync(raw) : raw;
+    const nm = Buffer.from(name);
+    const crc = zipCrc(raw);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(deflate ? 8 : 0, 8);
+    local.writeUInt32LE(crc, 14); local.writeUInt32LE(data.length, 18); local.writeUInt32LE(raw.length, 22);
+    local.writeUInt16LE(nm.length, 26);
+    const cen = Buffer.alloc(46);
+    cen.writeUInt32LE(0x02014b50, 0); cen.writeUInt16LE(20, 4); cen.writeUInt16LE(20, 6); cen.writeUInt16LE(deflate ? 8 : 0, 10);
+    cen.writeUInt32LE(crc, 16); cen.writeUInt32LE(data.length, 20); cen.writeUInt32LE(raw.length, 24);
+    cen.writeUInt16LE(nm.length, 28); cen.writeUInt32LE(off, 42);
+    parts.push(local, nm, data);
+    dirs.push(cen, nm);
+    off += 30 + nm.length + data.length;
+  }
+  const size = dirs.reduce((t, b) => t + b.length, 0);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(members.length, 8); end.writeUInt16LE(members.length, 10);
+  end.writeUInt32LE(size, 12); end.writeUInt32LE(off, 16);
+  return Buffer.concat([...parts, ...dirs, end]);
+}
+
+function zipCrc(bytes) {
+  let c = 0xffffffff;
+  for (const x of bytes) {
+    c ^= x;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  }
+  return (c ^ 0xffffffff) >>> 0;
 }
 
 if (failures) {

@@ -51,6 +51,7 @@
                 <a id="export-vcd" role="menuitem" class="disabled" download>VCD</a>
                 <a id="export-csv" role="menuitem" class="disabled" download>CSV</a>
                 <button id="export-png" role="menuitem" type="button" disabled data-i18n>PNG image</button>
+                <button id="export-dec" role="menuitem" type="button" disabled data-i18n>Decoder annotations…</button>
               </div>
             </div>
           </div>
@@ -241,6 +242,30 @@
       <button type="button" class="close mini" aria-label="Close" data-i18n-attr="aria-label">✕</button>
     </div>
     <dl id="about-list" class="about-list"></dl>
+  </dialog>
+
+  <dialog id="dec-export-dialog" class="dialog dec-export" aria-labelledby="dx-title">
+    <div class="dialog-head">
+      <h2 id="dx-title" data-i18n>Export decoder annotations</h2>
+      <button type="button" class="close mini" aria-label="Close" data-i18n-attr="aria-label">✕</button>
+    </div>
+    <form id="dx-form" method="dialog">
+      <label for="dx-dec" data-i18n>Decoder</label>
+      <select id="dx-dec"></select>
+      <span class="lab" data-i18n>Rows</span>
+      <div id="dx-rows" class="dx-checks"></div>
+      <span class="lab" data-i18n>Range</span>
+      <div class="dx-checks">
+        <label><input type="radio" name="dx-range" value="all" checked> <span data-i18n>Whole capture</span></label>
+        <label><input type="radio" name="dx-range" value="view"> <span data-i18n>Current view</span></label>
+        <label><input type="radio" name="dx-range" value="cursors" id="dx-range-cursors"> <span data-i18n>Between cursors A and B</span></label>
+      </div>
+      <p id="dx-info" class="dx-info"></p>
+      <div class="dx-btns">
+        <button type="button" id="dx-cancel" data-i18n>Cancel</button>
+        <button type="submit" id="dx-ok" class="primary" data-i18n>Export</button>
+      </div>
+    </form>
   </dialog>
 
   <div id="toast" class="toast" hidden></div>

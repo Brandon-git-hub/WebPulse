@@ -15,15 +15,27 @@ export default {
   *decode(d, o) {
     const on = o.active === 'high' ? 'r' : 'f';
     const off = on === 'r' ? 'f' : 'r';
-    let start = yield d.wait({ pwm: on });          // the first complete period starts here
-    for (;;) {
-      const mid = yield d.wait({ pwm: off });
-      const end = yield d.wait({ pwm: on });
-      const duty = (100 * (mid - start)) / (end - start);
-      const f = d.rate / (end - start);
-      const hz = f >= 1e6 ? `${(f / 1e6).toFixed(3)} MHz` : f >= 1e3 ? `${(f / 1e3).toFixed(3)} kHz` : `${f.toFixed(1)} Hz`;
-      d.put(start, end, 'duty', [`${duty.toFixed(1)} % · ${hz}`, `${duty.toFixed(1)} %`, `${Math.round(duty)}`]);
-      start = end;
+    let periods = 0, lo = Infinity, hi = -Infinity;
+    try {
+      let start = yield d.wait({ pwm: on });          // the first complete period starts here
+      for (;;) {
+        const mid = yield d.wait({ pwm: off });
+        const end = yield d.wait({ pwm: on });
+        const duty = (100 * (mid - start)) / (end - start);
+        const hz = freq(d.rate / (end - start));
+        d.put(start, end, 'duty', [`${duty.toFixed(1)} % · ${hz}`, `${duty.toFixed(1)} %`, `${Math.round(duty)}`]);
+        periods++;
+        lo = Math.min(lo, duty);
+        hi = Math.max(hi, duty);
+        start = end;
+      }
+    } finally {
+      // Runs when the capture ends: a summary for the settings popup and the export.
+      d.summary(periods ? `${periods} periods, duty ${lo.toFixed(1)} … ${hi.toFixed(1)} %` : 'no complete period');
     }
   },
 };
+
+function freq(f) {
+  return f >= 1e6 ? `${(f / 1e6).toFixed(3)} MHz` : f >= 1e3 ? `${(f / 1e3).toFixed(3)} kHz` : `${f.toFixed(1)} Hz`;
+}

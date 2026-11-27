@@ -117,6 +117,7 @@ document.getElementById('export-menu').hidden = true;
 document.getElementById('help-menu').hidden = true;
 document.getElementById('keys-dialog').hidden = true;
 document.getElementById('about-dialog').hidden = true;
+document.getElementById('dec-export-dialog').hidden = true;
 document.getElementById('dec-pop').hidden = true;
 document.getElementById('pre').value = '25';
 document.getElementById('timeout').value = '5';

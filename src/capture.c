@@ -430,7 +430,8 @@ int wp_engine_start(wp_engine *e, const wp_capture_cfg *cfg, char *err, size_t e
 }
 
 int wp_engine_load(wp_engine *e, uint8_t *raw, uint64_t n, uint64_t rate, int64_t trigger_pos,
-                   const char names[8][32], const char *note, char *err, size_t errlen)
+                   const char names[8][32], const char *source, const char *note,
+                   char *err, size_t errlen)
 {
     int expected = 0;
     wp_store *s;
@@ -452,6 +453,8 @@ int wp_engine_load(wp_engine *e, uint8_t *raw, uint64_t n, uint64_t rate, int64_
     }
     if (names)
         memcpy(s->names, names, sizeof(s->names));
+    if (source)
+        wp_strlcpy(s->source, source, sizeof(s->source));
     pthread_mutex_lock(&e->lock);
     if (e->store)
         wp_store_unref(e->store);

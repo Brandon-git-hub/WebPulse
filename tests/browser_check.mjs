@@ -177,7 +177,7 @@ try {
       m = document.getElementById('export-menu'), r = m.getBoundingClientRect();
     return { hidden: m.hidden, right: r.left >= e.right, inside: r.right <= innerWidth, focus: document.activeElement.id,
       items: [...m.querySelectorAll('[role="menuitem"]')].map((x) => x.textContent.trim()).join(',') }; })()`);
-  check(!sub.hidden && sub.right && sub.inside && sub.focus === 'export-vcd' && sub.items === 'VCD,CSV,PNG image',
+  check(!sub.hidden && sub.right && sub.inside && sub.focus === 'export-vcd' && sub.items === 'VCD,CSV,PNG image,Decoder annotations…',
     `→ opens Export to the right (${JSON.stringify(sub)})`);
   await shot('dark-file-menu.png');
   await key('ArrowLeft', 'ArrowLeft', 37);
@@ -296,6 +296,40 @@ try {
   await js(`(() => { document.getElementById('help-btn').click(); document.querySelector('#lang-menu [data-lang="en"]').click(); })()`);
   check(await js(`document.querySelector('#file-btn [data-i18n]').textContent`) === 'File', 'back to English');
 
+  // File ▸ Export ▸ Decoder annotations: a dialog, then a text file.
+  await js(`(() => {
+    window.__dl = null;
+    const orig = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {
+      if (!(this.download && this.href.startsWith('blob:'))) return orig.call(this);
+      const name = this.download;
+      fetch(this.href).then((r) => r.text()).then((text) => { window.__dl = { name, text }; });
+    };
+    document.getElementById('file-btn').click();
+    document.getElementById('export-btn').click();
+    document.getElementById('export-dec').click();
+  })()`);
+  await sleep(200);
+  const dx = await js(`(() => { const d = document.getElementById('dec-export-dialog'), r = d.getBoundingClientRect();
+    return { open: d.open, inside: r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
+      decs: [...document.getElementById('dx-dec').options].map((o) => o.text).join(','),
+      rows: [...document.querySelectorAll('#dx-rows input')].map((c) => c.checked ? 1 : 0).join(''),
+      cursors: document.getElementById('dx-range-cursors').disabled,
+      info: document.getElementById('dx-info').textContent }; })()`);
+  check(dx.open && dx.inside && dx.decs === 'UART,SPI' && dx.rows === '11' && /^[1-9][\d,]* annotations$/.test(dx.info),
+    `decoder export dialog (${JSON.stringify(dx)})`);
+  await shot('dark-decoder-export.png');
+  await js(`document.getElementById('dx-ok').click()`);
+  await waitFor(`window.__dl !== null`, 5000, 'decoder export download');
+  const dl = await js(`window.__dl`);
+  const dlLines = dl.text.split('\n');
+  check(/^webpulse-\d{8}-\d{6}-UART\.txt$/.test(dl.name) && /^# WebPulse \d+\.\d+\.\d+ decoder export$/.test(dlLines[0]) &&
+    /^# capture   live capture  \(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\)$/.test(dlLines[1]) &&
+    dl.text.includes('# decoder   uart  (built-in)\n') && dl.text.includes('# channels  rx=CH0\n') &&
+    /^[\d.]+\t[\d.]+\t\d+\tdata\t[0-9A-F]{2} '/m.test(dl.text),
+    `decoder export file (${dl.name}: ${dlLines.slice(0, 3).join(' / ')} … ${dlLines[11]})`);
+  check(await js(`!document.getElementById('dec-export-dialog').open`), 'dialog closes after the export');
+
   // Decoder settings open beside the label, inside the window; a change
   // applies at once.
   await js(`document.querySelector('#dec-labels .dec-label').click()`);
@@ -311,6 +345,24 @@ try {
   await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
   await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
   check(await js(`document.getElementById('dec-pop').hidden`), 'Esc closes the decoder settings');
+
+  // The example PWM decoder writes a summary: shown in its settings.
+  await js(`(() => {
+    const r = [...document.querySelectorAll('#ch-rows .ch')].find((x) => x.dataset.ch === '4');
+    const n = r.querySelector('.name'); n.value = 'PWM'; n.dispatchEvent(new Event('change'));
+    document.getElementById('decoders-btn').click();
+    const s = document.getElementById('dec-search'); s.focus(); s.value = 'pwm'; s.dispatchEvent(new Event('input'));
+  })()`);
+  await key('Enter', 'Enter', 13);
+  await waitFor(`[...document.querySelectorAll('#dec-labels .dec-label')].some((l) => l.textContent === 'PWM' && !l.title.startsWith('decoding'))`,
+    15000, 'PWM decode');
+  await js(`document.getElementById('decoders-btn').click()`);
+  await js(`[...document.querySelectorAll('#dec-labels .dec-label')].find((l) => l.textContent === 'PWM').click()`);
+  await waitFor(`!document.querySelector('#dec-pop .summary').hidden`, 5000, 'PWM summary');
+  const sum = await js(`document.querySelector('#dec-pop .summary').textContent`);
+  check(/^\d+ periods, duty [\d.]+ … [\d.]+ %$/.test(sum), `decoder summary in its settings (${sum})`);
+  await shot('dark-decoder-summary.png');
+  await key('Escape', 'Escape', 27);
 
   check(errors.length === 0, `no script errors (${errors.join(' | ')})`);
 } catch (e) {

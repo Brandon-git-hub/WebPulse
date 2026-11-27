@@ -157,10 +157,14 @@ static size_t status_json(wp_server *s, char *out, size_t len)
     store = wp_engine_store(s->engine);
     if (store) {
         int c, any = 0;
+        char src[300];
+        wp_json_escape(store->source, src, sizeof(src));
         n += (size_t)snprintf(out + n, len - n,
-            "{\"n\":%llu,\"rate\":%llu,\"trigger_pos\":%lld,\"changing\":%u",
+            "{\"n\":%llu,\"rate\":%llu,\"trigger_pos\":%lld,\"changing\":%u,"
+            "\"time\":%lld,\"source\":\"%s\"",
             (unsigned long long)store->n, (unsigned long long)store->rate,
-            (long long)store->trigger_pos, (unsigned)store->changing);
+            (long long)store->trigger_pos, (unsigned)store->changing,
+            (long long)store->time, src);
         for (c = 0; c < 8; c++)
             any |= store->names[c][0] != 0;
         /* Names only for an opened file, which brings its own. */
@@ -439,7 +443,7 @@ static int api_open(struct mg_connection *conn, wp_server *s, const struct mg_re
     free(buf);
     snprintf(note, sizeof(note), "opened %s%s%s", fname, c.note[0] ? " · " : "", c.note);
     if (wp_engine_load(s->engine, c.raw, c.n, c.rate, c.trigger_pos,
-                       (const char (*)[32])c.names, note, err, sizeof(err)) < 0)
+                       (const char (*)[32])c.names, fname, note, err, sizeof(err)) < 0)
         return send_error(conn, 409, err);
 
     n = (size_t)snprintf(body, sizeof(body), "{\"ok\":true,\"n\":%llu,\"rate\":%llu,\"mask\":%u,\"names\":[",

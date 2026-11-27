@@ -62,7 +62,7 @@ take 3.3 V logic; most of these boards also tolerate 5 V, but check yours.
 - **Protocol decoders:** UART, SPI, I²C, parallel bus and edge counter. You can
   also write your own in JavaScript.
 - **Files:** opens and saves sigrok / PulseView session files (`.sr`), and
-  exports VCD, CSV and PNG.
+  exports VCD, CSV, PNG and decoder annotations as text.
 - **Easy to deploy:** one executable with the UI built in. The Windows build
   needs no DLLs. A built-in simulator lets you try every feature without
   hardware.
@@ -214,6 +214,7 @@ The **File** menu at the left of the toolbar:
 | **Save session** (Ctrl+S) | Saves a session file (`.sr`) that PulseView can open. Includes the channel names and only the shown channels. |
 | **Export ▸ VCD / CSV** | The capture as a Value Change Dump or a CSV file, with only the shown channels. |
 | **Export ▸ PNG image** | The current view, with channel names and decoder annotations. |
+| **Export ▸ Decoder annotations…** | One decoder's annotations as a text file: choose the rows and the range (whole capture, current view, or between cursors A and B). See [Decoder annotations as text](#decoder-annotations-as-text). |
 
 ## Command line
 
@@ -294,6 +295,9 @@ several.
   options. Each change applies at once and the decoder runs again. **Remove
   decoder** is at the bottom.
 - Hover an annotation to see its full text in the status bar.
+- A decoder may write a summary (for example a table of timing checks). It is
+  shown at the bottom of the decoder's settings, and written at the end of an
+  annotation export.
 - Decoders run in the browser on the transitions of the channels they use, so
   even a 256M-sample capture decodes in about a second.
 
@@ -335,12 +339,21 @@ export default {
 | `auto: true` | Assign this optional input automatically when the decoder is added |
 | `aliases: ['sck']` | Other channel names that match this input |
 
+A row can have `export: false` (e.g. `{ id: 'bits', name: 'Bits', export: false }`):
+it is then left unchecked when exporting the annotations, for rows with very
+many entries.
+
 **How decoding works.** `decode` is a generator. `yield d.wait(cond)` waits for
 the next sample that matches `cond` and returns its sample index. Waiting
 always moves forward: a condition that already holds at the current sample
 does not match. When nothing matches before the end of the capture, decoding
 stops. Code in a `finally` block still runs, for example to close an
-annotation that lasts until the end.
+annotation that lasts until the end or to write a summary; an error thrown
+there is reported like any other.
+
+Annotations can be put in any order: each row is sorted by start time
+afterwards. Options whose default is a number arrive as numbers (`o.gap`, not
+`Number(o.gap)`), and options missing from saved settings get their default.
 
 | API | Description |
 |---|---|
@@ -349,13 +362,62 @@ annotation that lasts until the end.
 | `{ skip: n }` | n samples later (may be fractional) |
 | `d.until(s)` | At sample index s |
 | `d.pins.rx` | Level of the channel at the current sample (0 or 1) |
+| `d.prev.rx` | Level just before the current sample, e.g. the data line just before a clock edge |
 | `d.samplenum` / `d.rate` / `d.n` | Current sample index, sample rate (Hz), samples in the capture |
 | `d.has('cs')` | Whether an optional input is assigned |
 | `d.put(start, end, row, texts)` | Adds an annotation; `texts` is a string, or an array from longest to shortest, of which the longest that fits is shown |
+| `d.us(samples)`, `d.ms(samples)` | A number of samples as microseconds / milliseconds |
+| `d.summary(text)` | Adds lines to the decoder's summary (settings popup and export) |
 | `d.hex(v, bits)`, `d.bin`, `d.dec`, `d.oct`, `d.ascii(v)`, `d.format(v, bits, 'hex')` | Formatting helpers |
 
 An error thrown by a decoder is shown in its row, with the file and line.
 Annotations made before the error are kept.
+
+### Decoder annotations as text
+
+**File ▸ Export ▸ Decoder annotations…** and `tools/wp-decode.mjs` write the
+same format: a header of `#` lines that tells where the result came from, one
+tab-separated line per annotation (all chosen rows together, sorted by start),
+then the summary.
+
+```
+# WebPulse 0.3.1 decoder export
+# capture   uart.sr  (modified 2026-11-27 11:46:13)
+# rate      1000000 Hz, 200000 samples, no trigger
+# decoder   uart  (built-in)
+# channels  rx=CH0
+# options   baud=115200 bits=8 parity=none stop=1 order=lsb-first invert=no format=ascii
+# rows      data error
+# range     all
+# result    2026 annotations, 12 ms, no error
+#
+# start_ms	len_ms	sample	row	text
+1.763	0.087	1763	data	'H' 48
+1.849	0.087	1849	data	'e' 65
+## summary
+…
+```
+
+- Times are in milliseconds from sample 0, as in VCD and CSV exports; the
+  trigger position is in the header, and `sample` is the exact start.
+- `text` is the longest text of the annotation, on one line.
+- For a decoder file, the header has its name and CRC-32, so a result can be
+  traced back to the version of the decoder that made it.
+
+**Decoding without the UI:** `tools/wp-decode.mjs` runs a decoder on a `.sr`
+file with Node.js 18 or later, from a copy of this repository (it uses the
+runtime in `web/js/decode/`):
+
+```bash
+node tools/wp-decode.mjs capture.sr -d uart --opt baud=9600 -o capture-uart.txt
+node tools/wp-decode.mjs capture.sr -d decoders/pwm.js --ch pwm=CH4 --range 10ms:20ms
+node tools/wp-decode.mjs -d spi --list        # the decoder's inputs, options and rows
+```
+
+Inputs are assigned by channel name as in the UI; `--ch INPUT=NAME|CHn`
+overrides that. `--rows a,b` chooses the rows. The exit status is 2 when the
+decoder reported an error (the file is still written). `--help` lists every
+option.
 
 ## Building from source
 
@@ -403,7 +465,7 @@ cmake --build build/win        # -> build/win/webpulse.exe + build/win/firmware/
 | Test | Covers |
 |---|---|
 | `ctest` | C unit tests: trigger, store, FX2 protocol, JSON, capture engine, VCD / CSV export, ZIP / `.sr` read and write; also the decoder tests when Node.js is found |
-| `tests/decoders_test.mjs` | The decoder runtime and the built-in decoders, on generated waveforms |
+| `tests/decoders_test.mjs` | The decoder runtime, the annotation export and the built-in decoders, on generated waveforms |
 | `tests/web_smoke.mjs` | Runs `web/js/app.js` under Node 22+ with a fake DOM against a running server |
 | `tests/browser_check.mjs` | Drives the UI in headless Chrome (`$CHROME` or `chromium`): layout alignment, decoders running in a Web Worker, no script errors |
 | `tools/docshots.mjs` | Regenerates the README screenshots in `docs/images` |
@@ -425,7 +487,7 @@ web/          UI (plain ES modules, no build step), embedded into the executable
   js/decode/  decoder runtime
 decoders/     example user decoder, copied next to the executable
 tests/        unit tests, decoder tests, smoke test, browser check
-tools/        embed_web.py, make_icon.py (Windows icon from the favicon), package.py (release archives), docshots.mjs (README images)
+tools/        wp-decode.mjs (decode a .sr file without the UI), embed_web.py, make_icon.py (Windows icon from the favicon), package.py (release archives), docshots.mjs (README images)
 cmake/        Windows cross-compile toolchain
 firmware/     fx2lafw-saleae-logic.fw (GPLv2+, loaded at run time)
 third_party/  CivetWeb 1.16 (MIT)
@@ -438,7 +500,7 @@ third_party/  CivetWeb 1.16 (MIT)
 | GET | `/api/device` | Backend, model, firmware, `connected`, supported rates, maximum samples; version, build date, OS, CivetWeb and libusb versions (for Help ▸ About) |
 | POST | `/api/capture` | Start a capture: `{"rate":24000000,"samples":10000000,"pre":0.1,"trigger":"XXXXXXXR","timeout_ms":0}` |
 | POST | `/api/stop` | Stop; samples captured after the trigger are kept |
-| GET | `/api/status` | State (`idle` / `armed` / `capturing` / `processing` / `done` / `error`) and progress; `capture.changing` is the mask of channels that toggle |
+| GET | `/api/status` | State (`idle` / `armed` / `capturing` / `processing` / `done` / `error`) and progress; `capture.changing` is the mask of channels that toggle, `capture.time` when it was captured or opened (Unix time), `capture.source` the opened file's name |
 | GET | `/api/export?fmt=vcd\|csv\|sr[&names=a,b,…][&channels=0-3,6][&changes=0]` | Download the capture; `channels` selects the channels (default: all) |
 | POST | `/api/open?name=FILE.sr` | The body is a sigrok session file, which becomes the current capture |
 | GET | `/api/transitions?mask=M[&from=S]` | Binary list of the sample indices where the channels in mask `M` change; used by the decoders (format: `api_transitions` in `src/server.c`) |

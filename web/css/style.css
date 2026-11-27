@@ -606,6 +606,18 @@ button.primary:hover:not(:disabled) { filter: brightness(1.1); border-color: var
 .dec-pop .swatches button.on { border-color: var(--text); }
 .dec-pop .swatches input[type="color"] { width: 26px; height: 20px; padding: 0; border: 0; background: none; }
 .dec-pop .note { grid-column: 1 / -1; margin: 2px 0 0; color: var(--muted); font-size: 11px; }
+.dec-pop .summary {
+  grid-column: 1 / -1;
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre;
+}
 .dec-pop .btns { grid-column: 1 / -1; display: flex; justify-content: space-between; margin-top: 4px; }
 .dec-pop .btns button { padding: 3px 10px; font-size: 12px; }
 .dec-pop .btns .del { color: var(--danger); }
@@ -799,6 +811,23 @@ kbd {
 
 /* Help ▸ About */
 .dialog.about { width: min(520px, calc(100vw - 32px)); }
+.dialog.dec-export { width: min(460px, calc(100vw - 32px)); }
+#dx-form {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px 14px;
+  align-items: start;
+  font-size: 13px;
+}
+#dx-form > label, #dx-form > .lab { color: var(--muted); padding-top: 2px; }
+#dx-form select { padding: 3px 6px; }
+.dx-checks { display: flex; flex-direction: column; gap: 4px; }
+.dx-checks label { display: flex; align-items: center; gap: 6px; }
+.dx-checks label.off { color: var(--muted); }
+.dx-info { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 12px; }
+.dx-info.err { color: var(--danger); }
+.dx-btns { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
+.dx-btns button { padding: 4px 14px; }
 .about h2 { display: flex; align-items: center; gap: 8px; }
 .about h2 svg { width: 20px; height: 20px; fill: none; stroke: var(--accent); stroke-width: 2; }
 .about h2 span { color: var(--muted); font-weight: 500; font-size: 13px; }

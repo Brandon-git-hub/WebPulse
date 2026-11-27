@@ -24,13 +24,21 @@
 //   { skip: n }                  n samples later (may be fractional)
 //   d.until(s)                   sample s (absolute)
 // Waiting always moves forward (a match at the current sample does not count).
-// When no sample matches before the end of the capture, decode() is stopped.
+// When no sample matches before the end of the capture, decode() is stopped
+// (its finally blocks still run, and an error thrown there is reported).
+//
+// Also on d: d.pins / d.prev (levels at the current sample and just before
+// it), d.us(samples) / d.ms(samples) (a sample count as a time),
+// d.summary(text) (lines shown in the decoder settings and written to the
+// annotation export). Annotations may be put in any order: each row is sorted
+// by start afterwards. Options whose default is a number arrive as numbers;
+// missing ones get their default.
 
 const MAX_ANNOTATIONS = 4_000_000;
 
 export class DecodeError extends Error {}
 
-/** Annotations of one row: parallel arrays, sorted by start. */
+/** Annotations of one row: parallel arrays, sorted by start (see sortRow). */
 class Row {
   constructor() {
     this.start = [];
@@ -45,10 +53,13 @@ class Row {
  *   tr:     { pos: Float64Array, val: Uint8Array, n } transitions of the
  *           assigned channels (pos[0] = 0) and the number of samples
  *   rate:   sample rate in Hz
- * Returns { rows: { rowId: Row }, count, error }.
+ * Returns { rows: { rowId: Row }, count, error, summary: [lines], ms }.
  */
 export function runDecoder(dec, opt, assign, tr, rate) {
+  const t0 = Date.now();
+  opt = normalizeOptions(dec, opt);
   const rows = {};
+  const summary = [];
   for (const r of dec.rows || []) rows[r.id] = new Row();
   const ids = Object.keys(assign);
   const bit = {};
@@ -63,11 +74,17 @@ export function runDecoder(dec, opt, assign, tr, rate) {
     n,
     samplenum: -1,
     pins: {},
+    prev: {},
     matched: [],
     has: (id) => id in assign,
     wait: (cond) => cond,
     skip: (samples) => ({ skip: samples }),
     until: (sample) => ({ until: sample }),
+    us: (samples) => (samples * 1e6) / rate,
+    ms: (samples) => (samples * 1e3) / rate,
+    summary(text) {
+      for (const line of String(text).split(/\r?\n/)) summary.push(line);
+    },
     put(start, end, row, text) {
       const r = rows[row];
       if (!r) throw new DecodeError(`put(): unknown row "${row}"`);
@@ -85,8 +102,12 @@ export function runDecoder(dec, opt, assign, tr, rate) {
     return val[k];
   };
   const setPins = (s) => {
+    const pv = valueAt(s > 0 ? s - 1 : 0);   // s only grows, so s - 1 is never behind k
     const v = valueAt(s);
-    for (const id of ids) d.pins[id] = v & bit[id] ? 1 : 0;
+    for (const id of ids) {
+      d.pins[id] = v & bit[id] ? 1 : 0;
+      d.prev[id] = pv & bit[id] ? 1 : 0;
+    }
   };
 
   // Earliest sample > cur (>= 0 at the start) where one alternative holds; -1 if none.
@@ -167,10 +188,46 @@ export function runDecoder(dec, opt, assign, tr, rate) {
     }
   } catch (e) {
     error = describe(e);
-  } finally {
-    try { gen.return(); } catch { /* ignore */ }
   }
-  return { rows, count, error };
+  // Run the decoder's finally blocks (a no-op when it has already ended).
+  try {
+    if (!gen.return().done) error = error || 'a finally block must not yield';
+  } catch (e) {
+    error = error || describe(e);
+  }
+  for (const r of Object.values(rows)) sortRow(r);
+  return { rows, count, error, summary, ms: Date.now() - t0 };
+}
+
+/** Sort a row by start, then end, keeping the order of equal ones. */
+function sortRow(r) {
+  const { start, end } = r;
+  let sorted = true;
+  for (let i = 1; i < start.length && sorted; i++) {
+    if (start[i] < start[i - 1] || (start[i] === start[i - 1] && end[i] < end[i - 1])) sorted = false;
+  }
+  if (sorted) return;
+  const idx = Array.from(start, (_, i) => i);
+  idx.sort((a, b) => start[a] - start[b] || end[a] - end[b] || a - b);
+  r.start = idx.map((i) => start[i]);
+  r.end = idx.map((i) => end[i]);
+  r.text = idx.map((i) => r.text[i]);
+}
+
+/**
+ * The option values for dec: defaults for missing ones; for options with a
+ * number default, numeric strings ("300", " 1e3 ") become numbers.
+ */
+export function normalizeOptions(dec, opt = {}) {
+  const out = {};                     // in the decoder's order, then any others
+  for (const o of dec.options || []) {
+    const v = opt[o.id];
+    if (v === undefined || v === null) out[o.id] = o.default;
+    else if (typeof o.default === 'number' && typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))) out[o.id] = Number(v);
+    else out[o.id] = v;
+  }
+  for (const [k, v] of Object.entries(opt)) if (!(k in out)) out[k] = v;
+  return out;
 }
 
 /** An error from a decoder as "message (file.js:line)", without the stack. */

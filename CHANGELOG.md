@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+- **File ▸ Export ▸ Decoder annotations…** writes one decoder's annotations as
+  a text file: a header that says where the result came from (capture, rate,
+  trigger, decoder and its file's CRC-32, channels, options, rows, range,
+  result), one tab-separated line per annotation (all chosen rows merged by
+  start time), then the decoder's summary. Rows, and the range (whole
+  capture, current view, between cursors A and B), are chosen in a dialog.
+- `tools/wp-decode.mjs`: runs a decoder on a `.sr` file with Node.js, without
+  the UI, and writes the same format (`--opt`, `--ch`, `--rows`, `--range`,
+  `--list`).
+- Decoder runtime:
+  - `d.summary(text)`: lines shown at the bottom of the decoder's settings
+    and written at the end of the export. The example `decoders/pwm.js` uses
+    it.
+  - `d.prev`: the levels just before the current sample.
+  - `d.us(samples)`, `d.ms(samples)`.
+  - Each row is sorted by start time after decoding, so annotations can be
+    put in any order.
+  - An error thrown in a decoder's `finally` block is reported (it was
+    ignored, and annotations just went missing).
+  - Options whose default is a number arrive as numbers; options missing from
+    saved settings get their default.
+  - A row can have `export: false` to be left unchecked in the export.
+- The status's `capture` has `time` (when it was captured or opened) and
+  `source` (the opened file's name).
+
 ## 0.3.1
 
 - macOS support: a universal binary (Apple silicon and Intel, macOS 11 or
