@@ -317,6 +317,17 @@ for (const mode of [0, 1, 2, 3]) {
     check(r.status === 1 && /assign rx with --ch/.test(r.stderr), `wp-decode: a required input left unassigned (${r.stderr.trim()})`);
     r = cli(file, '-d', 'uart', '--opt', 'baud=400000');
     check(r.status === 2 && /too slow/.test(r.stderr) && r.stdout.includes('error: '), 'wp-decode: decoder error, exit status 2');
+    // Optional inputs are not guessed (even `auto` ones); required ones are, with a note.
+    const dfile = join(dir, 'pins.js');
+    writeFileSync(dfile, `export default { id: 'pins', name: 'Pins', rows: [{ id: 'x', name: 'X' }],
+      channels: [{ id: 'clk', name: 'CLK' }, { id: 'dio', name: 'DIO' }, { id: 'dir', name: 'DIR', optional: true, auto: true }],
+      *decode(d) { d.put(0, 1, 'x', d.has('dir') ? 'dir' : 'no dir'); } };`);
+    r = cli(file, '-d', dfile);
+    check(r.status === 0 && r.stdout.includes('# channels  clk=CLK dio=TX dir=-\n') &&
+      /by position \(no channel with a matching name\): dio=CH2;/.test(r.stderr) && /not assigned: dir /.test(r.stderr) &&
+      !/clk=CH0/.test(r.stderr), `wp-decode guesses only required inputs (${r.stderr.trim().replace(/\n/g, ' | ')})`);
+    r = cli(file, '-d', dfile, '--ch', 'dio=TX', '--ch', 'dir=CLK', '--ch', 'clk=-');
+    check(r.status === 1 && /assign clk/.test(r.stderr), `wp-decode --ch moves a channel (${r.stderr.trim()})`);
     r = cli(file, '-d', 'uart', '--opt', 'nope=1');
     check(r.status === 1 && /no option "nope"/.test(r.stderr), 'wp-decode rejects an unknown option');
   } finally {

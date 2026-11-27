@@ -192,7 +192,7 @@ webpulse --open capture.sr                                        # 在介面中
 |---|---|---|---|---|---|---|
 | 條件 | 不限 | 低準位 | 高準位 | 上升邊緣 | 下降邊緣 | 任一邊緣 |
 
-`--channels 0-3,6` 可限制輸出檔只包含指定的通道。執行 `webpulse --help` 可查看所有選項。
+`--channels 0-3,6` 可限制輸出檔只包含指定的通道；`--names VDD,ISP_CLK,,DIO` 可為通道命名（依序為 CH0、CH1…，留空則維持 `CHn`），以 `--open` 轉檔時也適用。通道有名稱，解碼器才能依名稱找到輸入，介面與 `wp-decode.mjs` 皆同。執行 `webpulse --help` 可查看所有選項。
 
 ## 遠端存取
 
@@ -320,7 +320,7 @@ node wp-decode.mjs capture.sr -d pwm --ch pwm=CH4 --range 10ms:20ms
 node wp-decode.mjs -d spi --list        # 列出解碼器的輸入、選項與標註列
 ```
 
-在本專案的原始碼目錄中，請改用 `node tools/wp-decode.mjs`，它會直接使用 `web/js/decode/` 與 `web/decoders/`。輸入與介面相同，依通道名稱自動指派；可用 `--ch INPUT=NAME|CHn` 指定。`--rows a,b` 選擇要輸出的列。解碼器回報錯誤時結束代碼為 2（檔案仍會寫出）。`--help` 可列出所有選項。
+在本專案的原始碼目錄中，請改用 `node tools/wp-decode.mjs`，它會直接使用 `web/js/decode/` 與 `web/decoders/`。輸入與介面相同，依通道名稱自動指派。找不到名稱相符的通道時（預設名稱 `CHn` 不算），必要的輸入會依序使用下一個未使用的通道，並在 stderr 註明；選用的輸入則保持不指派。可用 `--ch INPUT=NAME|CHn` 明確指定（`INPUT=-` 表示不指派）。`--rows a,b` 選擇要輸出的列。解碼器回報錯誤時結束代碼為 2（檔案仍會寫出）。`--help` 可列出所有選項。
 
 ## 從原始碼編譯
 

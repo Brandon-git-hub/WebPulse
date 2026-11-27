@@ -50,7 +50,11 @@ them in PulseView, or capture again.
                           or a decoder file (e.g. decoders/pwm.js)
       --opt NAME=VALUE    a decoder option (repeatable)
       --ch INPUT=CHANNEL  assign a decoder input to a channel: its name in the
-                          file, CHn or n (repeatable; others by channel name)
+                          file, CHn or n; - for none (repeatable). Otherwise an
+                          input goes to the channel named like it; a required
+                          one with no such channel takes the next free one, an
+                          optional one stays unassigned. (Name the channels
+                          when capturing: webpulse -c --names VDD,CLK,...)
       --rows A,B,...      rows to write (default: all but those marked
                           export: false by the decoder)
       --range A:B         only annotations starting in [A, B): samples, or
@@ -244,8 +248,18 @@ function parseRate(s) {
 
 // ---- assignment, options, rows, range ----------------------------------------------------
 
-const present = cap.names.map((nm, c) => c).filter((c) => cap.names.some(Boolean) ? cap.names[c] : true);
-const assign = autoAssign(def, cap.names, present);
+// Unlike the UI, where the assignment is in view and easy to change, inputs
+// are only guessed when they must be: an input goes to the channel named like
+// it; else a required one takes the next free channel (and says so on
+// stderr); an optional one stays unassigned unless --ch gives it a channel.
+// Default names (CH0 … CH7) do not count as names.
+const present = cap.names.map((nm, c) => c).filter((c) => cap.names[c]);
+const realNames = cap.names.map((nm) => (/^ch\d$/i.test(nm) ? '' : nm));
+const assign = autoAssign({ ...def, channels: def.channels.map((c) => ({ ...c, auto: false })) }, realNames, present);
+const byName = (id, c) => {
+  const ch = def.channels.find((x) => x.id === id);
+  return c !== null && realNames[c] && [ch.id, ch.name, ...(ch.aliases || [])].map(normName).includes(normName(realNames[c]));
+};
 for (const [id, v] of Object.entries(args.ch)) {
   if (!def.channels.some((c) => c.id === id)) fail(`decoder ${decId} has no input "${id}" (see --list)`);
   let c = -1;
@@ -260,6 +274,13 @@ for (const [id, v] of Object.entries(args.ch)) {
 }
 const used = {};
 for (const [id, c] of Object.entries(assign)) if (c !== null) used[id] = c;
+const guessed = Object.keys(used).filter((id) => !(id in args.ch) && !byName(id, used[id]));
+if (guessed.length) {
+  process.stderr.write(`wp-decode: by position (no channel with a matching name): ${
+    guessed.map((id) => `${id}=CH${used[id]}`).join(' ')}; use --ch to choose\n`);
+}
+const unset = def.channels.filter((c) => c.optional && !(c.id in used) && !(c.id in args.ch)).map((c) => c.id);
+if (unset.length) process.stderr.write(`wp-decode: optional inputs not assigned: ${unset.join(' ')} (--ch INPUT=CHANNEL)\n`);
 const missing = def.channels.filter((c) => !c.optional && !(c.id in used));
 if (missing.length) {
   fail(`assign ${missing.map((c) => c.id).join(', ')} with --ch (channels in the file: ${cap.names.map((nm, c) => nm || `CH${c}`).join(', ')})`);

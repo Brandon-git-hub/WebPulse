@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- `webpulse -c` and `--open … -o` take `--names VDD,ISP_CLK,,DIO`: channel
+  names for the output file (an empty entry keeps `CHn`), so decoders find
+  their inputs by name.
+- `wp-decode.mjs` no longer guesses optional inputs: where no channel has a
+  matching name (default `CHn` names do not count), an optional input stays
+  unassigned, even one marked `auto`, instead of taking the next free channel
+  (which gave false results, e.g. a direction line on a data channel).
+  Required inputs still take the next free channel, now with a note on
+  stderr; `--ch INPUT=-` leaves an input unassigned.
+
 ## 0.4.0
 
 - **File ▸ Export ▸ Decoder annotations…** writes one decoder's annotations as

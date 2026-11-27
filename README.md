@@ -244,8 +244,11 @@ applies to CH*i*. All conditions must hold at the same time (AND).
 |---|---|---|---|---|---|---|
 | Condition | don't care | low | high | rising edge | falling edge | either edge |
 
-`--channels 0-3,6` limits the output file to those channels. Run
-`webpulse --help` for every option.
+`--channels 0-3,6` limits the output file to those channels, and
+`--names VDD,ISP_CLK,,DIO` names them (CH0, CH1, …; an empty entry keeps
+`CHn`), also when converting with `--open`. Named channels let decoders find
+their inputs, in the UI and in `wp-decode.mjs`. Run `webpulse --help` for
+every option.
 
 ## Remote access
 
@@ -417,8 +420,11 @@ node wp-decode.mjs -d spi --list        # the decoder's inputs, options and rows
 ```
 
 In a copy of this repository, run `node tools/wp-decode.mjs` instead: it uses
-`web/js/decode/` and `web/decoders/` directly. Inputs are assigned by channel name as in the UI; `--ch INPUT=NAME|CHn`
-overrides that. `--rows a,b` chooses the rows. The exit status is 2 when the
+`web/js/decode/` and `web/decoders/` directly. Inputs are assigned by channel name, as in the UI. Where no channel has a
+matching name (default names `CHn` do not count), a required input takes the
+next free channel, and `wp-decode` says so on stderr; an optional input stays
+unassigned. `--ch INPUT=NAME|CHn` (or `INPUT=-` for none) sets an input
+explicitly. `--rows a,b` chooses the rows. The exit status is 2 when the
 decoder reported an error (the file is still written). `--help` lists every
 option.
 

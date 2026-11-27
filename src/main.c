@@ -65,6 +65,7 @@ typedef struct {
     const char *output;
     const char *open;           /* .sr file to load */
     unsigned channels;          /* channel mask for the output file */
+    char names[8][32];          /* --names: channel names, "" = keep / default */
     int list_rates;
 } options;
 
@@ -102,6 +103,8 @@ static void usage(FILE *f)
         "      --timeout MS         trigger timeout in ms, 0 = forever (default 0)\n"
         "  -o, --output FILE        output file: .vcd, .csv or .sr (sigrok / PulseView)\n"
         "      --channels LIST      channels to write, e.g. 0-3,6 (default 0-7)\n"
+        "      --names A,B,...      channel names for CH0, CH1, ... in the output file\n"
+        "                           (e.g. VDD,ISP_CLK,,DIO; empty = CHn); also with --open\n"
         "\n"
         "\n"
         "      --open FILE.sr       load a sigrok session file: with -o, convert it\n"
@@ -126,6 +129,42 @@ static int need_arg(int argc, char **argv, int *i, const char **out)
     }
     *out = argv[++*i];
     return 0;
+}
+
+/* "VDD,ISP_CLK,,DIO" -> names[0..3]; at most 8, each up to 31 characters. */
+static int parse_names(const char *v, char names[8][32])
+{
+    int c = 0;
+    const char *p = v;
+    memset(names, 0, 8 * 32);
+    for (;;) {
+        const char *e = strchr(p, ',');
+        size_t len = e ? (size_t)(e - p) : strlen(p);
+        if (c >= 8) {
+            fprintf(stderr, "webpulse: --names has more than 8 names\n");
+            return -1;
+        }
+        if (len > 31) {
+            fprintf(stderr, "webpulse: --names: \"%.*s\" is longer than 31 characters\n", (int)len, p);
+            return -1;
+        }
+        memcpy(names[c], p, len);
+        names[c][len] = '\0';
+        for (char *q = names[c]; *q; q++)
+            if (*q == '\n' || *q == '\r' || *q == '=')
+                *q = '_';
+        c++;
+        if (!e)
+            return 0;
+        p = e + 1;
+    }
+}
+
+/* names[c] for the output: --names first, else `from` (may be NULL), else NULL. */
+static void merge_names(const options *o, const char (*from)[32], const char *out[8])
+{
+    for (int c = 0; c < 8; c++)
+        out[c] = o->names[c][0] ? o->names[c] : from && from[c][0] ? from[c] : NULL;
 }
 
 static int parse_args(int argc, char **argv, options *o)
@@ -204,6 +243,9 @@ static int parse_args(int argc, char **argv, options *o)
                 fprintf(stderr, "webpulse: bad --channels \"%s\" (e.g. 0-3,6)\n", v);
                 return -1;
             }
+        } else if (strcmp(a, "--names") == 0) {
+            if (need_arg(argc, argv, &i, &v)) return -1;
+            if (parse_names(v, o->names) < 0) return -1;
         } else if (IS("-L", "--list-rates")) {
             o->list_rates = 1;
         } else {
@@ -359,12 +401,11 @@ static int run_convert(const options *o)
     wp_sr_capture c;
     const char *names[8];
     wp_store *store;
-    int i, rc;
+    int rc;
 
     if (load_sr(o->open, UINT64_MAX, &c) < 0)
         return 1;
-    for (i = 0; i < 8; i++)
-        names[i] = c.names[i][0] ? c.names[i] : NULL;
+    merge_names(o, (const char (*)[32])c.names, names);
     store = wp_store_new(c.raw, c.n, c.rate, c.trigger_pos);
     if (!store) {
         fprintf(stderr, "webpulse: out of memory\n");
@@ -425,7 +466,11 @@ static int run_capture(wp_engine *e, const options *o)
         fprintf(stderr, "webpulse: warning: %s\n", st.error);
 
     store = wp_engine_store(e);
-    rc = write_output(store, o, NULL);
+    {
+        const char *names[8];
+        merge_names(o, NULL, names);
+        rc = write_output(store, o, names);
+    }
     wp_store_unref(store);
     return rc;
 }
@@ -822,6 +867,9 @@ int main(int argc, char **argv)
                 wp_device_destroy(dev);
                 return desktop_end(1);
             }
+            for (int ch = 0; ch < 8; ch++)
+                if (o.names[ch][0])
+                    memcpy(c.names[ch], o.names[ch], sizeof(c.names[ch]));
             snprintf(note, sizeof(note), "opened %s", o.open);
             if (wp_engine_load(e, c.raw, c.n, c.rate, c.trigger_pos,
                                (const char (*)[32])c.names, path_basename(o.open), note,
