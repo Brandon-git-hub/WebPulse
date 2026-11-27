@@ -258,7 +258,7 @@ interfaces), other computers can connect, but they need an access token.
 WebPulse generates a random token at start-up and prints the address to open:
 
 ```
-WebPulse 0.4.0 listening on port 9002  (Ctrl+C to quit)
+WebPulse 0.4.1 listening on port 9002  (Ctrl+C to quit)
   on this computer:  http://localhost:9002/
   from elsewhere:    http://<this-computer>:9002/?token=930b25a523cc8bb39041ac3f524115ba
 ```
@@ -384,7 +384,7 @@ tab-separated line per annotation (all chosen rows together, sorted by start),
 then the summary.
 
 ```
-# WebPulse 0.4.0 decoder export
+# WebPulse 0.4.1 decoder export
 # capture   uart.sr  (modified 2026-11-27 11:46:13)
 # rate      1000000 Hz, 200000 samples, no trigger
 # decoder   uart  (built-in)

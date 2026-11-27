@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1
 
 - `webpulse -c` and `--open … -o` take `--names VDD,ISP_CLK,,DIO`: channel
   names for the output file (an empty entry keeps `CHn`), so decoders find
